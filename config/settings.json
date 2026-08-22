@@ -1,0 +1,4 @@
+{
+    "memory_db_path": "memory/chroma",
+    "memory_collection_name": "umay_memory"
+}

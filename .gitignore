@@ -1,0 +1,67 @@
+# Python
+cache/
+*.log
+
+# IDE/Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# RAG vector databases
+rag/vector_db/
+rag/chroma/
+
+# Secrets / credentials / API keys
+.env
+.env.*
+*.env
+
+# Telegram sessions (contain auth tokens)
+*.session
+*.session-journal
+telegram_user_sessions/
+
+# Memory databases (runtime data)
+memory/
+
+# User personal data (CV, job apps, etc.)
+UMAY_MEMORY/
+
+# Archived data
+UMAY_ARCHIVE/
+
+# Uploads (user files)
+uploads/
+
+# Backups
+backup/
+
+# Logs (runtime)
+logs/
+
+# Freebuff internal
+.freebuff/
+
+# Pycache (catch-all)
+__pycache__/
+
+# Temp files
+temp/
+
+# Build artifacts
+*.egg-info/
+dist/
+build/
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ZIP archives (large binary files)
+*.zip
+
+# Docker runtime data
+.dockerignore

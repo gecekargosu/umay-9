@@ -1,0 +1,57 @@
+"""Interactive Telegram personal-account login bootstrap.
+
+Run this once in a secure terminal. The generated Telethon session is never
+written to source, logs, or the Docker image.
+"""
+from __future__ import annotations
+
+import asyncio
+import getpass
+import os
+from pathlib import Path
+
+from telethon import TelegramClient
+from telethon.errors import SessionPasswordNeededError
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+def _session_path() -> Path:
+    value = os.getenv("TELEGRAM_USER_SESSION_PATH", "telegram_user_sessions/umay_user")
+    path = Path(value)
+    return path if path.is_absolute() else ROOT / path
+
+
+async def main() -> int:
+    raw_api_id = os.getenv("TELEGRAM_USER_API_ID") or input("Telegram API ID: ").strip()
+    api_hash = os.getenv("TELEGRAM_USER_API_HASH") or getpass.getpass("Telegram API hash: ")
+    if not raw_api_id.isdigit() or not api_hash:
+        print("Invalid Telegram API credentials.")
+        return 2
+
+    session_path = _session_path()
+    session_path.parent.mkdir(parents=True, exist_ok=True)
+    client = TelegramClient(str(session_path), int(raw_api_id), api_hash)
+    await client.connect()
+    try:
+        if not await client.is_user_authorized():
+            phone = getpass.getpass("Telegram phone number: ")
+            sent = await client.send_code_request(phone)
+            code = getpass.getpass("Telegram login code: ")
+            try:
+                await client.sign_in(phone=phone, code=code, phone_code_hash=sent.phone_code_hash)
+            except SessionPasswordNeededError:
+                password = getpass.getpass("Telegram 2FA password: ")
+                await client.sign_in(password=password)
+        if not await client.is_user_authorized():
+            print("Telegram user authorization failed.")
+            return 3
+        me = await client.get_me()
+        print(f"Telegram user session ready (user_id={me.id}).")
+        return 0
+    finally:
+        await client.disconnect()
+
+
+if __name__ == "__main__":
+    raise SystemExit(asyncio.run(main()))

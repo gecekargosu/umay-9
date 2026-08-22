@@ -1,0 +1,80 @@
+# ─── UMAY AI Agent — Docker Compose ─────────────────────────────────────────
+# Host üzerindeki Ollama'ya host.docker.internal üzerinden bağlanır
+# Windows/Mac Docker Desktop'ta host.docker.internal otomatik çözümleme mevcut
+#
+# Kullanım:
+#   docker compose build
+#   docker compose up -d
+#   docker compose logs -f
+#
+# Opsiyonel yerel Ollama:
+#   docker compose --profile local-ollama up -d
+# ─────────────────────────────────────────────────────────────────────────────
+
+services:
+  umay:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: umay-agent
+    ports:
+      - "5001:5001"
+    volumes:
+      # Persistent data
+      - umay-memory:/app/memory/chroma
+      - umay-chroma:/app/rag/chroma
+      - umay-telegram-session:/run/umay/telegram
+      - ./logs:/app/logs
+      # Knowledge base (read-only)
+      - ./knowledge:/app/knowledge:ro
+    environment:
+      # Ollama — host.docker.internal üzerinden host'a erişim
+      - OLLAMA_URL=http://host.docker.internal:11434
+      - UMAY_MODE=auto_fix
+      - PYTHONPATH=/app
+      # Telegram (opsiyonel — .env dosyasından okunur)
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
+      - TELEGRAM_ALLOWED_USER_ID=${TELEGRAM_ALLOWED_USER_ID:-}
+      - TELEGRAM_USER_API_ID=${TELEGRAM_USER_API_ID:-}
+      - TELEGRAM_USER_API_HASH=${TELEGRAM_USER_API_HASH:-}
+      - TELEGRAM_USER_ALLOWED_USER_ID=${TELEGRAM_USER_ALLOWED_USER_ID:-}
+      - TELEGRAM_USER_ALLOWED_CHAT_ID=${TELEGRAM_USER_ALLOWED_CHAT_ID:-}
+      - TELEGRAM_USER_SESSION_PATH=/run/umay/telegram/umay_user
+      - TELEGRAM_USER_ACCEPT_OUTGOING=${TELEGRAM_USER_ACCEPT_OUTGOING:-false}
+    extra_hosts:
+      # Windows/Mac: host.docker.internal -> host machine
+      - "host.docker.internal:host-gateway"
+    depends_on: []
+    restart: unless-stopped
+    networks:
+      - umay-net
+
+  # ─── Opsiyonel: Yerel Ollama Container ────────────────────────────────────
+  # Sadece host Ollama çalışmıyorsa kullanın:
+  #   docker compose --profile local-ollama up -d
+  ollama:
+    image: ollama/ollama:latest
+    container_name: umay-ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama-data:/root/.ollama
+    profiles:
+      - local-ollama
+    restart: unless-stopped
+    networks:
+      - umay-net
+
+volumes:
+  umay-memory:
+    driver: local
+  umay-chroma:
+    driver: local
+  umay-telegram-session:
+    driver: local
+  ollama-data:
+    driver: local
+
+networks:
+  umay-net:
+    driver: bridge

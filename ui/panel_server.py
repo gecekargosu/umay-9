@@ -1405,6 +1405,27 @@ def chat_history_api():
         return jsonify({"messages": [], "error": str(e)})
 
 
+@app.route("/api/conversations")
+def conversations_list_api():
+    """List all conversations for history sidebar."""
+    try:
+        from core import conversation_store as _conv
+        convs = _conv.list_conversations(limit=50)
+        result = []
+        for c in convs:
+            history = _conv.get_history(c["id"], max_pairs=1)
+            last_msg = history[-1]["content"][:80] if history else ""
+            result.append({
+                "id": c["id"],
+                "title": c.get("title") or last_msg[:50] or c["id"],
+                "updated_at": c["updated_at"],
+                "message_count": len(_conv.get_history(c["id"], max_pairs=100)),
+            })
+        return jsonify({"conversations": result})
+    except Exception as e:
+        return jsonify({"conversations": [], "error": str(e)})
+
+
 # ─── Diagnostics ──────────────────────────────────────
 
 @app.route("/api/diagnostics")

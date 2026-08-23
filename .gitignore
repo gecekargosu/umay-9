@@ -24,7 +24,7 @@ rag/chroma/
 telegram_user_sessions/
 
 # Memory databases (runtime data)
-memory/
+/memory/
 
 # User personal data (CV, job apps, etc.)
 UMAY_MEMORY/

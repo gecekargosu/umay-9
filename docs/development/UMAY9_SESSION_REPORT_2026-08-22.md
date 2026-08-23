@@ -1,7 +1,7 @@
 # UMAY 9 — KAPSAMLI OTURUM RAPORU
 **Tarih:** 2026-08-22 21:00
 **AI:** Buffy (Codebuff)
-**Kullanıcı:** Cengiz (@Hiddenst8)
+**Kullanıcı:** [redacted for privacy]
 
 ---
 
@@ -30,15 +30,15 @@
 ### Gerçek Test Sonucu
 ```
 [TELEGRAM_USER] User account client bağlandı.
-Logged in as: Cengiz (@Hiddenst8) ID=2009087777
+Logged in as: [User Account connected]
 Test message sent!
 ```
 
 ### Mevcut Yapı
 ```
-TELEGRAM_USER_API_ID=31047595
-TELEGRAM_USER_API_HASH=f870166ee5cf004f57ae17f99087234b
-TELEGRAM_USER_ALLOWED_USER_ID=2009087777
+TELEGRAM_USER_API_ID=<set in .env>
+TELEGRAM_USER_API_HASH=<set in .env>
+TELEGRAM_USER_ALLOWED_USER_ID=<set in .env>
 Session: telegram_user_sessions/umay_user.session
 Container mount: ./telegram_user_sessions:/run/umay/telegram
 ```

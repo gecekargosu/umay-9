@@ -26,7 +26,7 @@ Kişisel yapay zeka işletim sistemi. Ollama tabanlı local LLM, Docker containe
 ## Durum: STEP-05 COMPLETE + TELEGRAM AKTİF + TOOLS EKLENDİ
 - **564 tests passing, 0 failures**
 - Docker container healthy on port 5001
-- **Telegram User Account: BAĞLI** (Cengiz @Hiddenst8, ID: 2009087777)
+- **Telegram User Account: BAĞLI** (User Account connected)
 - **Dosya/Klasör Açma Tool'ları: EKLENDİ** (open_file, open_folder, open_url, open_with_app)
 
 ## Uncommitted Changes (all tested, ready to commit)
@@ -79,10 +79,10 @@ core/attachment_engine.py  → File processing
 - **STEP-04 features preserved:** token budget, compression, recovery, attachments, vision, tools
 
 ## Telegram Durumu
-- ✅ **User Account: BAĞLI** (Cengiz @Hiddenst8, ID: 2009087777)
+- ✅ **User Account: BAĞLI** (User Account connected)
 - ❌ Bot API: Token yok (opsiyonel)
 - Session: `telegram_user_sessions/umay_user.session`
-- API: `TELEGRAM_USER_API_ID=31047595`, `API_HASH=f870166ee5cf004f57ae17f99087234b`
+- API: Set in `.env` (see `.env.example` for required variables)
 - Container'da bind mount: `./telegram_user_sessions:/run/umay/telegram`
 
 ## Dosya/Klasör Açma Tool'ları (YENİ)

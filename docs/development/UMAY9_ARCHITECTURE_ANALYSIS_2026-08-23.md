@@ -99,7 +99,7 @@ use_tools = TOOLS if not is_chat or routed_task != "chat" else None
 **Mevcut:**
 - `conversation_store.py` — SQLite, calisiyor
 - `agent.py` — history ekleniyor (son 10 mesaj)
-- Session ID: `telegram_user:2009087777`
+- Session ID: `telegram_user:<USER_ID>`
 
 **Sorun:**
 - Her `run_agent` cagrisinda yeni `start_task()` olusturuluyor

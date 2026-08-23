@@ -1,6 +1,6 @@
 # STEP-05 EXTENSION — TELEGRAM + MIMO + BROWSER + TOOLS
 **Tarih:** 2026-08-22 21:00
-**Session:** Cengiz (@Hiddenst8, ID: 2009087777)
+**Session:** Telegram User Account connected
 
 ---
 
@@ -17,7 +17,7 @@
 - **Sorun:** Docker-compose.yml'de `umay-telegram-session` volume mount'u session dosyasını görmüyordu
 - **Çözüm:** `docker-compose.yml`'de volume mount bind mount olarak değiştirildi: `./telegram_user_sessions:/run/umay/telegram`
 - Session dosyaları container'a kopyalandı
-- **Test:** Telethon ile gerçek mesaj gönderildi — `Logged in as: Cengiz (@Hiddenst8) ID=2009087777`
+- **Test:** Telethon ile gerçek mesaj gönderildi — `Logged in as: [User Account connected]`
 - **Durum:** Container restart sonrası Telegram User Account otomatik bağlanıyor
 
 ### 2. ✅ MiMo — ARAŞTIRMASI TAMAMLANDI

@@ -44,16 +44,16 @@ Telegram mesajı (kullanıcı telefonu)
 ### Gerçek Test Logları
 ```
 [21:28:07] EVENT_RECEIVED: message_id=4578
-[21:28:07] MESSAGE_RECEIVED: sender=2009087777 text=Kanka
+[21:28:07] MESSAGE_RECEIVED: sender=[USER_ID] text=Kanka
 [21:28:07] ROUTING_TO_UMAY: text=Kanka
 [21:29:34] UMAY_RESPONSE: "Önce, lütfen bu isteğin..."
-[21:29:34] RESPONSE_SENDING: chat=2009087777 len=387
-[21:29:35] RESPONSE_SENT: chat=2009087777
+[21:29:34] RESPONSE_SENDING: chat=[USER_ID] len=387
+[21:29:35] RESPONSE_SENT: chat=[USER_ID]
 
 [21:30:33] MESSAGE_RECEIVED: text="Şuan telegram iletişim yolumuzu test ediyoruz"
 [21:30:57] UMAY_RESPONSE: "Üzgünüm, bir yanlış anlaşılma..."
-[21:30:57] RESPONSE_SENDING: chat=2009087777 len=164
-[21:30:57] RESPONSE_SENT: chat=2009087777
+[21:30:57] RESPONSE_SENDING: chat=[USER_ID] len=164
+[21:30:57] RESPONSE_SENT: chat=[USER_ID]
 ```
 
 ---

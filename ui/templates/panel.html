@@ -545,6 +545,7 @@ body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Robo
   </div>
 </div>
 
+<script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.5/socket.io.min.js"></script>
 <script>
 let currentPage = 'dashboard';
 let chatHistory = [];
@@ -763,14 +764,42 @@ async function sendChat() {
   document.getElementById('chat-status-phase').textContent = 'Thinking...';
   document.getElementById('chat-status-msg').textContent = 'Analyzing request...';
   // Use SocketIO for non-blocking chat with task controls
-  socket.emit('chat_message', {
+  const chatPayload = {
     soru: msg,
     session_id: conversationId,
     model: selectedModel,
     mode: selectedMode,
     attachments: attData,
-  });
-  // Response handled by socket.on('chat_response') — no need to await
+  };
+  if (socket && socket.connected) {
+    socket.emit('chat_message', chatPayload);
+    // Response handled by socket.on('chat_response') — no need to await
+  } else {
+    // HTTP fallback when SocketIO is unavailable
+    sendChatHTTP(chatPayload);
+  }
+}
+
+async function sendChatHTTP(payload) {
+  try {
+    const r = await fetch('/api/chat', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(payload),
+    });
+    const data = await r.json();
+    if (data.error) {
+      addChatMsg('assistant', 'Hata: ' + data.error);
+    } else {
+      addChatMsg('assistant', data.cevap, data.model, data.latency);
+    }
+  } catch(e) {
+    addChatMsg('assistant', 'Bağlantı hatası: ' + e.message);
+  }
+  chatBusy = false;
+  document.getElementById('chat-send').disabled = false;
+  hideIntent();
+  document.getElementById('chat-status').classList.remove('visible');
 }
 
 function addChatMsg(role, text, model, latency, toolInfo) {
@@ -991,9 +1020,18 @@ async function runBenchmark() {
 }
 
 // ─── SocketIO ───
-const socket = io();
-socket.on('connect', () => { document.getElementById('s-umay').className = 'status-dot on'; });
-socket.on('disconnect', () => { document.getElementById('s-umay').className = 'status-dot off'; });
+let socket = null;
+try {
+  if (typeof io !== 'undefined') {
+    socket = io();
+    socket.on('connect', () => { document.getElementById('s-umay').className = 'status-dot on'; });
+    socket.on('disconnect', () => { document.getElementById('s-umay').className = 'status-dot off'; });
+  } else {
+    console.warn('[UMAY] Socket.IO client not loaded — chat will use HTTP fallback');
+  }
+} catch(e) {
+  console.warn('[UMAY] Socket.IO init failed:', e.message);
+}
 
 // ─── Task Controls ───
 function showTaskControls(taskId) {
@@ -1024,18 +1062,18 @@ function updateControlButtons() {
 }
 function pauseTask() {
   if (!currentTaskId) return;
-  socket.emit('pause_task', {session_id: conversationId});
+  if (socket && socket.connected) socket.emit('pause_task', {session_id: conversationId});
 }
 function resumeTask() {
   if (!currentTaskId) return;
-  socket.emit('resume_task', {session_id: conversationId});
+  if (socket && socket.connected) socket.emit('resume_task', {session_id: conversationId});
 }
 function cancelTask() {
   if (!currentTaskId) return;
-  socket.emit('cancel_task', {session_id: conversationId});
+  if (socket && socket.connected) socket.emit('cancel_task', {session_id: conversationId});
 }
 
-socket.on('task_status', (data) => {
+if (socket) socket.on('task_status', (data) => {
   if (currentPage === 'chat') {
     const bar = document.getElementById('chat-status');
     bar.classList.add('visible');
@@ -1064,7 +1102,7 @@ socket.on('task_status', (data) => {
 });
 
 // ─── SocketIO Chat Response ───
-socket.on('chat_response', (data) => {
+if (socket) socket.on('chat_response', (data) => {
   if (data.error) {
     addChatMsg('assistant', 'Error: ' + (data.error || 'Unknown error'));
   } else {
@@ -1076,7 +1114,7 @@ socket.on('chat_response', (data) => {
   document.getElementById('chat-status-phase').textContent = 'Completed';
   setTimeout(() => { hideTaskControls(); document.getElementById('chat-status').classList.remove('visible'); hideIntent(); }, 2000);
 });
-socket.on('screenshot', (data) => {
+if (socket) socket.on('screenshot', (data) => {
   if (currentPage === 'browser' || currentPage === 'dashboard') {
     const el = document.getElementById('browser-screenshot');
     if (el && data.img) {
@@ -1085,7 +1123,7 @@ socket.on('screenshot', (data) => {
     }
   }
 });
-socket.on('analiz', (data) => {
+if (socket) socket.on('analiz', (data) => {
   const el = document.getElementById('browser-analysis');
   if (el) {
     let html = `<div style="margin-bottom:4px"><strong style="color:var(--text-primary);font-size:12px">${escHtml(data.baslik||'No title')}</strong></div>`;
@@ -1099,8 +1137,8 @@ socket.on('analiz', (data) => {
     document.getElementById('browser-status').className = 'card-badge badge-green';
   }
 });
-socket.on('durum', (data) => {});
-socket.on('log', (data) => {
+if (socket) socket.on('durum', (data) => {});
+if (socket) socket.on('log', (data) => {
   if (currentPage === 'dashboard') {
     const el = document.getElementById('live-log');
     if (el && data.metin) {
@@ -1152,6 +1190,5 @@ loadDashboard();
 loadModels();
 setInterval(() => { if (currentPage === 'dashboard') loadDashboard(); }, 15000);
 </script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.5/socket.io.min.js"></script>
 </body>
 </html>

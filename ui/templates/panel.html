@@ -822,12 +822,17 @@ async function sendChat() {
   const attData = pendingAttachments.map(a => ({filename: a.filename, ext: a.ext, type: a.type||'unknown', icon: a.icon||'📎', content: a.content||'', has_content: a.has_content||false, is_vision: a.is_vision||false, size: a.size||0, hash: a.hash||''}));
   pendingAttachments = [];
   showAttachments();
-  // Show intent indicator
+  // Show intent indicator + task controls
   showIntent('thinking', null, selectedMode);
   const statusBar = document.getElementById('chat-status');
   statusBar.classList.add('visible');
-  document.getElementById('chat-status-phase').textContent = 'Thinking...';
-  document.getElementById('chat-status-msg').textContent = 'Analyzing request...';
+  document.getElementById('chat-status-phase').textContent = 'Düşünüyor...';
+  document.getElementById('chat-status-msg').textContent = 'İstek analiz ediliyor...';
+  // Show task controls during processing
+  currentTaskState = 'RUNNING';
+  const tc = document.getElementById('task-controls');
+  if (tc) tc.style.display = 'flex';
+  updateControlButtons();
   // Use SocketIO for non-blocking chat with task controls
   const chatPayload = {
     soru: msg,
@@ -856,15 +861,17 @@ async function sendChatHTTP(payload) {
     if (data.error) {
       addChatMsg('assistant', 'Hata: ' + data.error);
     } else {
-      addChatMsg('assistant', data.cevap, data.model, data.latency);
+      const toolInfo = data.tool ? {tool: data.tool, status: data.tool_status || 'OK', duration: data.tool_duration, detail: data.tool_result} : null;
+      addChatMsg('assistant', data.cevap, data.model, data.latency, toolInfo);
     }
   } catch(e) {
     addChatMsg('assistant', 'Bağlantı hatası: ' + e.message);
   }
   chatBusy = false;
   document.getElementById('chat-send').disabled = false;
-  hideIntent();
-  document.getElementById('chat-status').classList.remove('visible');
+  document.getElementById('chat-status-phase').textContent = 'Tamamlandı';
+  setTimeout(() => { hideTaskControls(); document.getElementById('chat-status').classList.remove('visible'); hideIntent(); }, 1500);
+  loadConversationsList();
 }
 
 function addChatMsg(role, text, model, latency, toolInfo) {
@@ -1177,8 +1184,9 @@ if (socket) socket.on('chat_response', (data) => {
   }
   chatBusy = false;
   document.getElementById('chat-send').disabled = false;
-  document.getElementById('chat-status-phase').textContent = 'Completed';
-  setTimeout(() => { hideTaskControls(); document.getElementById('chat-status').classList.remove('visible'); hideIntent(); }, 2000);
+  document.getElementById('chat-status-phase').textContent = 'Tamamlandı';
+  setTimeout(() => { hideTaskControls(); document.getElementById('chat-status').classList.remove('visible'); hideIntent(); }, 1500);
+  loadConversationsList();
 });
 if (socket) socket.on('screenshot', (data) => {
   if (currentPage === 'browser' || currentPage === 'dashboard') {

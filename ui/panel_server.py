@@ -797,11 +797,38 @@ def execute_chat_task(task_id, session_id, soru, attachments, *, on_status=None,
                         matches = r["matches"]
                         result_parts.append(f"{len(matches)} eslesme bulundu")
                     elif "results" in r and isinstance(r["results"], list):
-                        # Web search results
+                        # Web search results — LLM'e gonder, analiz ettirsin
                         results = r["results"]
                         count = r.get("count", len(results))
-                        listing = "\n".join([f"  {i+1}. {res.get('title', '')}\n     {res.get('href', '')}" for i, res in enumerate(results[:5])])
-                        result_parts.append(f"🔍 {count} arama sonucu ({r.get('query', '')}):\n{listing}")
+                        query = r.get("query", soru)
+                        # Sonuclari text formatina cevir
+                        results_text = "Arama sorgusu: " + query + chr(10) + chr(10) + "Bulunan sonuclar:" + chr(10)
+                        for i, res in enumerate(results[:5]):
+                            results_text += str(i+1) + ". " + res.get("title", "") + chr(10) + "   " + res.get("href", "") + chr(10) + chr(10)
+                        # LLM'e gonder: sonuclari analiz etsin
+                        try:
+                            _llm_prompt = "Sen UMAY'sin. Asagidaki web arama sonuclarini analiz et ve kullanicinin sorusuna gore cevap hazirla." + chr(10) + chr(10) + "Kullanici sorusu: " + soru + chr(10) + chr(10) + results_text + chr(10) + chr(10) + "Bu sonuclara gore kisa ve anlamlı bir cevap hazirla. Kaynak belirt."
+                            _llm_result = umay_chat([{"role": "user", "content": _llm_prompt}], model=resolve_model("chat"))
+                            if isinstance(_llm_result, dict):
+                                _llm_msg = _llm_result.get("message", {})
+                                cevap = _llm_msg.get("content", "") if isinstance(_llm_msg, dict) else str(_llm_result)
+                            else:
+                                cevap = str(_llm_result)
+                        except Exception as _llm_err:
+                            listing = chr(10).join([str(i+1) + ". " + res.get("title", "") + chr(10) + "   " + res.get("href", "") for i, res in enumerate(results[:5])])
+                            cevap = "\U0001f50d " + str(count) + " arama sonucu (" + query + "):" + chr(10) + chr(10) + listing
+                        # Direkt cevap olarak don
+                        t_end = time.time()
+                        latency = {"total": round(t_end - t_start, 2), "router": round(t_router_done - t_router, 3), "model": 0}
+                        _add_to_history(session_id, "user", soru)
+                        _add_to_history(session_id, "assistant", cevap)
+                        resp_data = {"cevap": cevap, "model": "direct", "gorev": "web", "latency": latency, "mode": mode}
+                        if tool_results:
+                            resp_data["tool"] = tool_results[0]["tool"]
+                            resp_data["tool_status"] = "PASS"
+                        if on_complete:
+                            on_complete(task_id, resp_data)
+                        return
                     elif "url" in r and "text" in r:
                         # Browser open result
                         text = r.get("text", "")[:500]

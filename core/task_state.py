@@ -121,8 +121,17 @@ def checkpoint(
     })
 
 
-def finish_task(task_id: str, step: int, status: str, answer: str = "") -> None:
-    _append({"event": "finish", "task_id": task_id, "step": step, "status": status, "answer": answer[:4000]})
+def finish_task(task_id: str, step: int, status: str, answer: str = "", result: dict | None = None) -> None:
+    """Finish task and persist full result dict for wait_for_completion fallback."""
+    event = {"event": "finish", "task_id": task_id, "step": step, "status": status, "answer": answer[:4000]}
+    if result and isinstance(result, dict):
+        # Persist full result (truncated for safety)
+        import copy
+        _r = copy.deepcopy(result)
+        if "latency" in _r:
+            _r["latency"] = {k: v for k, v in _r["latency"].items() if isinstance(v, (int, float))}
+        event["result"] = _r
+    _append(event)
 
 
 def load_task(task_id: str) -> dict[str, Any] | None:
@@ -176,6 +185,19 @@ def list_tasks_for_workspace(workspace: str, limit: int = 20) -> list[dict[str, 
         if t.get("workspace") == workspace
     ]
     return filtered[-max(1, int(limit)):]
+
+
+def get_status(task_id: str) -> dict | None:
+    """Get latest task status including full result dict."""
+    task = load_task(task_id)
+    if not task:
+        return None
+    return {
+        "task_id": task.get("task_id"),
+        "status": task.get("status"),
+        "answer": task.get("answer", ""),
+        "result": task.get("result"),
+    }
 
 
 def update_status(task_id: str, status: str) -> bool:

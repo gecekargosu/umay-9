@@ -554,6 +554,7 @@ def execute_chat_task(task_id, session_id, soru, attachments, *, on_status=None,
         _tool_messages, _bounded_tool_result,
     )
     from core.identity import UMAY_SYSTEM as _UMAY_SYSTEM, CHAT_IDENTITY as _CHAT_IDENTITY
+    from core.utils.logger import log
 
     # ── Intent Router entegrasyonu ──────────────────────────────────────
     try:
@@ -677,7 +678,8 @@ def execute_chat_task(task_id, session_id, soru, attachments, *, on_status=None,
 
     # ── DIRECT TOOL EXECUTION (TIME/CALCULATOR/FILE/DOCUMENT/WEB/TERMINAL) ──
     # These tools are deterministic and don't need LLM involvement
-    if _intent in (Intent.TIME, Intent.CALCULATOR, Intent.FILE, Intent.DOCUMENT, Intent.WEB, Intent.TERMINAL) and _intent_tools_list and not has_image:
+    log(f"[DEBUG-ATTACH] intent={_intent}, tools={_intent_tools_list}, has_image={has_image}, attachments_len={len(attachments)}, attachments_bool={bool(attachments)}")
+    if _intent in (Intent.TIME, Intent.CALCULATOR, Intent.FILE, Intent.DOCUMENT, Intent.WEB, Intent.TERMINAL) and _intent_tools_list and not has_image and not attachments:
         try:
             from core.agent_tools import DISPATCH as _DISPATCH
             tool_results = []
@@ -1237,6 +1239,10 @@ def _emit_task_status(task_id, phase, message, **extra):
 
 def _on_task_complete(task_id, result):
     """Callback for TaskExecutor — task finished successfully."""
+    # Store result for wait_for_completion to read
+    from core.task_executor import _results_store
+    if result and isinstance(result, dict) and result.get('cevap'):
+        _results_store[task_id] = result
     socketio.emit("task_completed", {
         "task_id": task_id,
         "result": result,
@@ -1804,6 +1810,10 @@ def on_chat_message(data):
         })
 
     def _socket_on_complete(tid, result):
+        # Store result for wait_for_completion to read
+        from core.task_executor import _results_store
+        if result and isinstance(result, dict) and result.get('cevap'):
+            _results_store[tid] = result
         socketio.emit("chat_response", {
             "task_id": tid,
             "session_id": session_id,

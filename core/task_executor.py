@@ -19,6 +19,10 @@ class TaskCancelledException(Exception):
 
 _registry_lock = threading.Lock()
 _tasks: dict[str, dict[str, Any]] = {}
+# Cache results before cleanup — prevents race in wait_for_completion
+_completed_results: dict[str, dict] = {}
+# Direct result store — set by execute_fn via _set_result()
+_results_store: dict[str, dict] = {}
 
 
 def _gen_task_id() -> str:
@@ -70,26 +74,21 @@ class TaskExecutor:
                 "created_at": time.time(), "result": None, "error": None,
             }
 
-        # Wrap on_complete to capture result for task_state persistence
-        captured_result = {"data": None}
-        def _capture_complete(tid, result):
-            captured_result["data"] = result
-            if on_complete:
-                on_complete(tid, result)
-
         def _wrapper():
             self._set_status(task_id, "RUNNING")
             if on_status:
                 on_status(task_id, "running", "Görev çalışıyor...")
             try:
                 execute_fn(task_id, session_id, soru, attachments or [],
-                          on_status=on_status, on_complete=_capture_complete, on_error=on_error, **kwargs)
-                # Success path: capture result and finalize lifecycle
+                          on_status=on_status, on_complete=on_complete, on_error=on_error, **kwargs)
+                # Read result from _results_store (set by execute_fn calling on_complete)
+                stored = _results_store.pop(task_id, None)
                 self._set_status(task_id, "COMPLETED")
-                self._finish(task_id, "COMPLETED", captured_result["data"] or {"status": "COMPLETED"})
+                self._finish(task_id, "COMPLETED", stored or {"status": "COMPLETED"})
             except TaskCancelledException:
                 log(f"[EXECUTOR] Task cancelled: {task_id}")
                 self._set_status(task_id, "CANCELLED")
+                log(f"[EXECUTOR-DBG] cancelled path, captured_result={captured_result}")
                 if on_status:
                     on_status(task_id, "cancelled", f"Task iptal edildi: {task_id}")
                 self._finish(task_id, "CANCELLED", {"cancelled": True})
@@ -97,6 +96,7 @@ class TaskExecutor:
                     on_complete(task_id, {"status": "CANCELLED"})
             except Exception as exc:
                 log(f"[EXECUTOR] Task error: {task_id} -- {exc}")
+                log(f"[EXECUTOR-DBG] error path, captured_result={captured_result}")
                 self._set_status(task_id, "ERROR")
                 if on_status:
                     on_status(task_id, "error", f"Task hatasi: {exc}")
@@ -130,16 +130,25 @@ class TaskExecutor:
         with _registry_lock:
             info = _tasks.get(task_id)
             if not info:
-                # Task cleaned up — check task_state for result
+                # Task cleaned up — check _completed_results cache first
+                cached = _completed_results.pop(task_id, None)
+                if cached:
+                    return cached
+                # Fallback: check task_state for result
                 try:
                     from core import task_state
                     ts = task_state.get_status(task_id)
+                    if ts and ts.get("result"):
+                        return ts["result"]
                     if ts and ts.get("answer"):
                         return {"cevap": ts["answer"], "model": "auto", "gorev": "chat", "latency": {"total": 0}}
                 except Exception:
                     pass
                 return {"cevap": "", "model": "auto", "gorev": "chat", "latency": {"total": 0}, "status": "COMPLETED"}
-            return info.get("result") or info.get("error")
+            result = info.get("result") or info.get("error")
+            if result:
+                _completed_results.pop(task_id, None)
+            return result
 
     def _finish(self, task_id, status, result=None):
         with _registry_lock:
@@ -147,6 +156,9 @@ class TaskExecutor:
                 _tasks[task_id]["status"] = status
                 _tasks[task_id]["result"] = result
                 _tasks[task_id]["finished_at"] = time.time()
+                # Cache result BEFORE signaling — prevents race with wait_for_completion
+                if result:
+                    _completed_results[task_id] = result
                 completion_ev = _tasks[task_id].get("completion_event")
                 if completion_ev:
                     completion_ev.set()
@@ -157,7 +169,7 @@ class TaskExecutor:
                 lat = result.get("latency", {})
                 step = int(lat.get("total", 0)) if lat else 0
                 answer = result.get("cevap", result.get("error", ""))
-            task_state.finish_task(task_id, step=step, status=status, answer=str(answer)[:4000])
+            task_state.finish_task(task_id, step=step, status=status, answer=str(answer)[:4000], result=result)
         except Exception as e:
             log(f"[EXECUTOR] task_state.finish_task error: {e}")
 

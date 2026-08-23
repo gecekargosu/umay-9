@@ -182,26 +182,38 @@ def classify_intent(text: str) -> Intent:
     
     # 1. Matematik operatörleri varsa → CALCULATOR
     has_numbers = bool(_re.search(r'\d', text_lower))
-    has_math_ops = any(op in text_lower for op in ['+', '-', '*', '/', '=', '^', '**'])
+    has_math_ops = any(op in text_lower for op in ['+', '-', '*', '/', '=', '^', '**', '×', '÷'])
     
-    # 2. Türkçe matematik kelimeleri (genişletilmiş)
+    # 2. Türkçe matematik kelimeleri (SADECE kesin matematik bağlamında)
+    # NOT: 'matematik', 'ortalama', 'işlem', 'hesapla' tek başına CALCULATOR tetiklemez
+    # Çünkü "İnternette matematik haberleri" WEB olmalı
     has_math_words = any(w in text_lower for w in [
-        # Temel işlemler
-        'toplam', 'topla', 'çarp', 'carp', 'böl', 'bol',
+        # Kesin işlemler (sayı ile birlikte olmalı)
+        'topla', 'çarp', 'carp', 'böl', 'bol',
         'kaç eder', 'kac eder', 'sonuç', 'sonuc', 'eşit', 'esit',
-        # Üs alma
+        # Üs alma (sayı ile birlikte)
         'karesi', 'karesini', 'kare', 'kaçın karesi', 'kaacin karesi',
         'küpü', 'küpünü', 'kupu', 'kupunu', 'kaçın küpü',
-        # Türkçede sık kullanılan
+        # Sayı ile birlikte anlamlı olanlar
         'kaçtır', 'kactir', 'kaçtir', 'kaçıncı',
-        'hesapla', 'hesaplama', 'hesaplayalım',
-        # Fark/Toplam/Ortalama
         'toplamı', 'toplami', 'farkı', 'farki',
         'çarpımı', 'carpimi', 'bölümü', 'bolumu',
-        'ortalama', 'yüzde', 'yüzdesi', 'yuzde', 'yuzdesi',
-        # Matematik terimleri
-        'matematik', 'işlem', 'islem', 'hesaplama',
+        'yüzdesi', 'yuzdesi',
     ])
+    # 'hesapla' SADECE sayı ile birlikteyse CALCULATOR
+    has_hesapla_with_number = has_numbers and any(w in text_lower for w in ['hesapla', 'hesaplama', 'hesaplayalım'])
+    if has_hesapla_with_number:
+        has_math_words = True
+    # 'ortalama' SADECE sayı ile birlikteyse CALCULATOR  
+    has_ortalama_with_number = has_numbers and any(w in text_lower for w in ['ortalama', 'yüzde', 'yuzde'])
+    if has_ortalama_with_number:
+        has_math_words = True
+    # 'matematik' ve 'işlem' SADECE sayı + matematik operatör varsa CALCULATOR
+    # "125×48 matematik işlemi" → CALCULATOR
+    # "İnternette matematik haberleri" → WEB (sayı yok)
+    has_math_term_with_ops = has_numbers and has_math_ops and any(w in text_lower for w in ['matematik', 'işlem', 'islem'])
+    if has_math_term_with_ops:
+        has_math_words = True
     
     # 3. X ile Y topla / X'den Y çıkar / X'i Y'ye böl gibi pattern'lar
     has_turkish_math_pattern = bool(_re.search(
@@ -228,13 +240,18 @@ def classify_intent(text: str) -> Intent:
     ))
 
     # Calculator karar mantığı
-    if (has_numbers and has_math_ops) or has_math_words or has_turkish_math_pattern or has_power_pattern or has_percentage_pattern:
+    is_calc = (has_numbers and has_math_ops) or has_math_words or has_turkish_math_pattern or has_power_pattern or has_percentage_pattern
+    
+    if is_calc:
         # Negation varsa calculator'a gitme
         if has_negation_around_math:
             return Intent.CHAT
-        # Ama "hesapla" tek başına ve bağlam matematik değilse → CHAT
+        # Tek başına 'hesapla/hesaplama' ve sayı yoksa → CHAT
         if text_lower.strip() in ('hesapla', 'hesaplama', 'hesaplayalım'):
-            return Intent.CHAT  # Tek başına 'hesapla' chat olarak sınıflandır
+            return Intent.CHAT
+        # "hesapla" var ama sayı yoksa → CHAT ("internette haberleri hesapla" gibi)
+        if not has_numbers and any(w in text_lower for w in ['hesapla', 'hesaplama']):
+            return Intent.CHAT
         return Intent.CALCULATOR
 
     # Her intent'i kontrol et (öncelik sırasına göre)

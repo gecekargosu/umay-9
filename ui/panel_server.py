@@ -528,14 +528,25 @@ def execute_chat_task(task_id, session_id, soru, attachments, *, on_status=None,
     except Exception:
         _internet_ok = False
 
-    # If LOCAL mode and intent requires web, override to local-only behavior
-    if mode == "local" and _intent == Intent.WEB:
-        # LOCAL mode: web research not available, use knowledge response
+    # ── MODE POLICY ──
+    MODE_POLICY = {
+        "local":  {"web_allowed": False, "terminal_allowed": True},
+        "online": {"web_allowed": True,  "terminal_allowed": True},
+        "auto":   {"web_allowed": True,  "terminal_allowed": True},
+    }
+    policy = MODE_POLICY.get(mode, MODE_POLICY["auto"])
+
+    # LOCAL mode: web research not available, use knowledge response
+    if not policy["web_allowed"] and _intent == Intent.WEB:
         _intent = Intent.KNOWLEDGE
         _intent_tools_list = None
+        if on_status:
+            on_status(task_id, "info", "LOCAL modda web araması yapılamaz")
+    # ONLINE mode but no internet: fall back to local
     elif mode == "online" and not _internet_ok:
-        # ONLINE mode but no internet: fall back to local
         mode = "local"
+        if on_status:
+            on_status(task_id, "warning", "İnternet bağlantısı yok — LOCAL moda düşüldü")
 
     # Check if any attachment is an image -> route to vision model
     has_image = any(a.get("is_vision") or a.get("type") == "image" for a in attachments)
@@ -737,17 +748,20 @@ def execute_chat_task(task_id, session_id, soru, attachments, *, on_status=None,
                     elif _intent == Intent.TERMINAL:
                         if tool_name == "run_command":
                             import re as _re
-                            # Komutu sorudan cikar
                             _cmd = soru.strip()
-                            # Yaygin prefix'leri kaldir
-                            for _prefix in ['cmdde ', 'cmd de ', 'terminalde ', 'komut calistir ', 'calistir ']:
-                                if _cmd.lower().startswith(_prefix):
-                                    _cmd = _cmd[len(_prefix):].strip()
+                            # Komut prefix/suffix temizleme
+                            _cleanup_patterns = [
+                                r'^(cmdde|cmd de|terminalde|terminal de|powershellde)\s*',
+                                r'\s*(komutunu|komutu|komut)\s*(calistir|calıstır|çalıştır|calıstır)?\s*$',
+                                r'\s*(calistir|calıstır|çalıştır|calıstır)\s*$',
+                            ]
+                            for _pat in _cleanup_patterns:
+                                _cmd = _re.sub(_pat, '', _cmd, flags=_re.IGNORECASE).strip()
+                            if not _cmd:
+                                _cmd = 'dir'  # Fallback
                             tool_args = {"command": _cmd}
                         elif tool_name == "run_powershell":
-                            import re as _re
-                            _cmd = soru.strip()
-                            tool_args = {"command": _cmd}
+                            continue  # Sadece run_command — powershell gereksiz
                     try:
                         tool_result = _DISPATCH[tool_name](**tool_args)
                         t_tool_done = time.time()

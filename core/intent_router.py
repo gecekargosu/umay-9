@@ -183,6 +183,9 @@ def classify_intent(text: str) -> Intent:
     # 1. Matematik operatörleri varsa → CALCULATOR
     has_numbers = bool(_re.search(r'\d', text_lower))
     has_math_ops = any(op in text_lower for op in ['+', '-', '*', '/', '=', '^', '**', '×', '÷'])
+    # 'x' harfi sadece sayilar arasindaysa carpma isareti sayilir: "125 x 48"
+    if not has_math_ops:
+        has_math_ops = bool(_re.search(r'\d\s*x\s*\d', text_lower))
     
     # 2. Türkçe matematik kelimeleri (SADECE kesin matematik bağlamında)
     # NOT: 'matematik', 'ortalama', 'işlem', 'hesapla' tek başına CALCULATOR tetiklemez
@@ -253,6 +256,12 @@ def classify_intent(text: str) -> Intent:
         if not has_numbers and any(w in text_lower for w in ['hesapla', 'hesaplama']):
             return Intent.CHAT
         return Intent.CALCULATOR
+
+    # TERMINAL once check: cmd/terminal/powershell kelimesi varsa TERMINAL
+    # Bu, CODE'daki 'calistir' keyword'unun_TERMINAL'i overrides etmesini engeller
+    _terminal_keywords = ['cmd', 'terminal', 'powershell', 'ps ', 'komut calistir', 'komut çalıştır']
+    if any(kw in text_lower for kw in _terminal_keywords):
+        return Intent.TERMINAL
 
     # Her intent'i kontrol et (öncelik sırasına göre)
     for intent, keywords in INTENT_RULES:

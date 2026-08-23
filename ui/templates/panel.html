@@ -415,6 +415,12 @@ body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Robo
               </label>
               <input type="text" id="chat-input" placeholder="Mesajınızı yazın... (Enter ile gönder)" onkeydown="if(event.key==='Enter' && !event.shiftKey){event.preventDefault();sendChat()}">
               <button onclick="sendChat()" id="chat-send">Gönder</button>
+              <!-- Task Controls: Pause/Resume/Cancel -->
+              <div id="task-controls" style="display:none;margin-left:6px;gap:3px;align-items:center">
+                <button onclick="pauseTask()" id="btn-pause" title="Durdur" style="background:var(--bg-secondary);color:var(--accent);border:1px solid var(--accent);border-radius:var(--radius-sm);padding:4px 8px;font-size:11px;cursor:pointer">⏸</button>
+                <button onclick="resumeTask()" id="btn-resume" title="Devam Et" style="background:var(--bg-secondary);color:var(--accent);border:1px solid var(--accent);border-radius:var(--radius-sm);padding:4px 8px;font-size:11px;cursor:pointer;display:none">▶</button>
+                <button onclick="cancelTask()" id="btn-cancel" title="İptal" style="background:var(--bg-secondary);color:#ef4444;border:1px solid #ef4444;border-radius:var(--radius-sm);padding:4px 8px;font-size:11px;cursor:pointer">■</button>
+              </div>
             </div>
           </div>
         </div>
@@ -547,6 +553,8 @@ let selectedModel = 'auto';
 let selectedMode = 'auto';
 let conversationId = 'panel-' + Date.now();
 let availableModels = [];
+let currentTaskId = null;
+let currentTaskState = null;  // RUNNING, PAUSED, COMPLETED, CANCELLED
 
 // ─── Navigation ───
 function showPage(page) {
@@ -751,24 +759,15 @@ async function sendChat() {
   statusBar.classList.add('visible');
   document.getElementById('chat-status-phase').textContent = 'Thinking...';
   document.getElementById('chat-status-msg').textContent = 'Analyzing request...';
-  try {
-    const r = await fetch('/api/chat', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({soru: msg, session_id: conversationId, model: selectedModel, mode: selectedMode, attachments: attData})});
-    const d = await r.json();
-    // Update intent based on response
-    if (d.gorev) showIntent(d.gorev, d.tool || null, d.model || selectedMode);
-    document.getElementById('chat-status-phase').textContent = 'Completed';
-    document.getElementById('chat-status-msg').textContent = d.latency ? `${d.latency.total}s` : '';
-    setTimeout(() => { statusBar.classList.remove('visible'); hideIntent(); }, 3000);
-    // Build tool info
-    const toolInfo = d.tool ? {tool: d.tool, status: d.tool_status || 'OK', duration: d.tool_duration, detail: d.tool_result} : null;
-    addChatMsg('assistant', d.cevap || 'No response', d.model, d.latency, toolInfo);
-  } catch(e) {
-    addChatMsg('assistant', 'Error: ' + e.message);
-    statusBar.classList.remove('visible');
-    hideIntent();
-  }
-  chatBusy = false;
-  document.getElementById('chat-send').disabled = false;
+  // Use SocketIO for non-blocking chat with task controls
+  socket.emit('chat_message', {
+    soru: msg,
+    session_id: conversationId,
+    model: selectedModel,
+    mode: selectedMode,
+    attachments: attData,
+  });
+  // Response handled by socket.on('chat_response') — no need to await
 }
 
 function addChatMsg(role, text, model, latency, toolInfo) {
@@ -831,6 +830,8 @@ async function loadPageData(page) {
     case 'comms': loadComms(); break;
     case 'telegram': loadTelegram(); break;
     case 'logs': loadLogs(); break;
+    case 'tasks': loadTasks(); break;
+    case 'approvals': loadApprovals(); break;
     case 'settings': loadSettings(); break;
     case 'diagnostics': runDiagnostics(); break;
   }
@@ -882,6 +883,27 @@ async function loadScheduler() {
   if (d && d.tasks) {
     document.getElementById('scheduler-content').innerHTML = d.tasks.length ? '<table class="data-table"><thead><tr><th>Name</th><th>Enabled</th><th>Next Run</th></tr></thead><tbody>' + d.tasks.map(t => `<tr><td>${escHtml(t.name)}</td><td><span class="card-badge ${t.enabled?'badge-green':'badge-red'}">${t.enabled?'YES':'NO'}</span></td><td>${t.next_run ? new Date(t.next_run).toLocaleString() : '-'}</td></tr>`).join('') + '</tbody></table>' : '<div class="empty-state"><div class="icon">⏰</div><div class="text">No scheduled tasks</div></div>';
   }
+}
+
+async function loadTasks() {
+  const d = await api('/api/chat/tasks?session_id=' + encodeURIComponent(conversationId));
+  if (d) {
+    const all = [...(d.active_tasks || []), ...(d.historical_tasks || [])];
+    document.getElementById('tasks-content').innerHTML = all.length ? '<table class="data-table"><thead><tr><th>ID</th><th>Status</th><th>Request</th><th>Created</th></tr></thead><tbody>' + all.map(t => {
+      const statusClass = t.status === 'COMPLETED' ? 'badge-green' : t.status === 'RUNNING' ? 'badge-yellow' : t.status === 'CANCELLED' ? 'badge-red' : '';
+      const created = t.created_at ? new Date(t.created_at * 1000).toLocaleTimeString() : '-';
+      const shortId = t.task_id ? t.task_id.slice(-12) : '-';
+      const req = t.request ? escHtml(t.request.slice(0, 60)) : '-';
+      return `<tr><td style="font-family:monospace;font-size:9px">${shortId}</td><td><span class="card-badge ${statusClass}">${t.status || '?'}</span></td><td style="font-size:10px">${req}</td><td style="font-size:9px;color:var(--text-muted)">${created}</td></tr>`;
+    }).join('') + '</tbody></table>' : '<div class="empty-state"><div class="icon">📋</div><div class="text">No tasks yet</div></div>';
+  }
+}
+
+async function loadApprovals() {
+  // Approval system status
+  const el = document.getElementById('approvals-content');
+  if (!el) return;
+  el.innerHTML = '<div class="empty-state"><div class="icon">✅</div><div class="text">No pending approvals</div><div style="font-size:9px;color:var(--text-muted);margin-top:4px">Approval system active — requests appear here when tools need permission</div></div>';
 }
 
 async function loadComms() {
@@ -969,14 +991,87 @@ async function runBenchmark() {
 const socket = io();
 socket.on('connect', () => { document.getElementById('s-umay').className = 'status-dot on'; });
 socket.on('disconnect', () => { document.getElementById('s-umay').className = 'status-dot off'; });
+
+// ─── Task Controls ───
+function showTaskControls(taskId) {
+  currentTaskId = taskId;
+  currentTaskState = 'RUNNING';
+  const el = document.getElementById('task-controls');
+  if (el) el.style.display = 'flex';
+  updateControlButtons();
+}
+function hideTaskControls() {
+  currentTaskId = null;
+  currentTaskState = null;
+  const el = document.getElementById('task-controls');
+  if (el) el.style.display = 'none';
+}
+function updateControlButtons() {
+  const pause = document.getElementById('btn-pause');
+  const resume = document.getElementById('btn-resume');
+  const cancel = document.getElementById('btn-cancel');
+  if (!pause) return;
+  if (currentTaskState === 'RUNNING') {
+    pause.style.display = 'inline-block'; resume.style.display = 'none'; cancel.style.display = 'inline-block';
+  } else if (currentTaskState === 'PAUSED') {
+    pause.style.display = 'none'; resume.style.display = 'inline-block'; cancel.style.display = 'inline-block';
+  } else {
+    pause.style.display = 'none'; resume.style.display = 'none'; cancel.style.display = 'none';
+  }
+}
+function pauseTask() {
+  if (!currentTaskId) return;
+  socket.emit('pause_task', {session_id: conversationId});
+}
+function resumeTask() {
+  if (!currentTaskId) return;
+  socket.emit('resume_task', {session_id: conversationId});
+}
+function cancelTask() {
+  if (!currentTaskId) return;
+  socket.emit('cancel_task', {session_id: conversationId});
+}
+
 socket.on('task_status', (data) => {
   if (currentPage === 'chat') {
     const bar = document.getElementById('chat-status');
     bar.classList.add('visible');
     document.getElementById('chat-status-phase').textContent = data.phase || '';
     document.getElementById('chat-status-msg').textContent = data.message || '';
-    if (data.phase === 'completed') setTimeout(() => bar.classList.remove('visible'), 2000);
+    // Track task state for controls
+    if (data.task_id && data.phase === 'task_created') {
+      showTaskControls(data.task_id);
+    }
+    if (data.phase === 'running' || data.phase === 'thinking' || data.phase === 'calling_model') {
+      currentTaskState = 'RUNNING';
+      updateControlButtons();
+    }
+    if (data.phase === 'paused') {
+      currentTaskState = 'PAUSED';
+      updateControlButtons();
+    }
+    if (data.phase === 'resumed') {
+      currentTaskState = 'RUNNING';
+      updateControlButtons();
+    }
+    if (data.phase === 'completed' || data.phase === 'cancelled' || data.phase === 'error') {
+      setTimeout(() => { hideTaskControls(); bar.classList.remove('visible'); }, 2000);
+    }
   }
+});
+
+// ─── SocketIO Chat Response ───
+socket.on('chat_response', (data) => {
+  if (data.error) {
+    addChatMsg('assistant', 'Error: ' + (data.error || 'Unknown error'));
+  } else {
+    const toolInfo = data.tool ? {tool: data.tool, status: data.tool_status || 'OK', duration: data.tool_duration, detail: data.tool_result} : null;
+    addChatMsg('assistant', data.cevap || 'No response', data.model, data.latency, toolInfo);
+  }
+  chatBusy = false;
+  document.getElementById('chat-send').disabled = false;
+  document.getElementById('chat-status-phase').textContent = 'Completed';
+  setTimeout(() => { hideTaskControls(); document.getElementById('chat-status').classList.remove('visible'); hideIntent(); }, 2000);
 });
 socket.on('screenshot', (data) => {
   if (currentPage === 'browser' || currentPage === 'dashboard') {

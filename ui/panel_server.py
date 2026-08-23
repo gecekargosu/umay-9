@@ -1522,6 +1522,140 @@ def on_connect():
         pass
 
 
+# ─── SocketIO Chat (non-blocking, with task controls) ───────────────────────
+# Current task tracking per session for pause/resume/cancel
+_socket_tasks: dict[str, str] = {}  # session_id -> task_id
+
+
+@socketio.on("chat_message")
+def on_chat_message(data):
+    """Handle chat via SocketIO — non-blocking, supports pause/resume/cancel."""
+    soru = data.get("soru", "")
+    session_id = data.get("session_id", "default")
+    model_override = data.get("model", "auto")
+    mode = data.get("mode", "auto")
+    attachments = data.get("attachments", [])
+
+    if not soru and not attachments:
+        emit("chat_response", {"error": "Soru bos"})
+        return
+
+    # Create task via task_state
+    from core import task_state
+    task_id = task_state.start_task(
+        request=soru[:200],
+        workspace=session_id,
+        model="auto",
+    )
+
+    # Track task for this session
+    _socket_tasks[session_id] = task_id
+
+    # Link conversation to task
+    _conv_store.set_last_task_id(session_id, task_id)
+
+    # Emit task created
+    emit("task_status", {
+        "phase": "task_created",
+        "message": f"Gorev olusturuldu: {task_id}",
+        "icon": "📋",
+        "task_id": task_id,
+        "session_id": session_id,
+    })
+
+    # Submit to background executor with socketio callbacks
+    def _socket_on_status(tid, phase, message, **extra):
+        socketio.emit("task_status", {
+            "phase": phase,
+            "message": message,
+            "task_id": tid,
+            "session_id": session_id,
+            **extra,
+        })
+
+    def _socket_on_complete(tid, result):
+        socketio.emit("chat_response", {
+            "task_id": tid,
+            "session_id": session_id,
+            **(result if isinstance(result, dict) else {"cevap": str(result)}),
+        })
+        # Cleanup tracking
+        _socket_tasks.pop(session_id, None)
+
+    def _socket_on_error(tid, error):
+        socketio.emit("chat_response", {
+            "task_id": tid,
+            "session_id": session_id,
+            "error": error.get("error", str(error)) if isinstance(error, dict) else str(error),
+        })
+        _socket_tasks.pop(session_id, None)
+
+    executor = get_executor()
+    executor.submit(
+        session_id=session_id,
+        soru=soru,
+        execute_fn=execute_chat_task,
+        attachments=attachments,
+        task_id=task_id,
+        on_status=_socket_on_status,
+        on_complete=_socket_on_complete,
+        on_error=_socket_on_error,
+        model_override=model_override,
+        mode=mode,
+    )
+
+
+@socketio.on("pause_task")
+def on_pause_task(data):
+    """Pause the current task for a session."""
+    session_id = data.get("session_id", "default")
+    task_id = _socket_tasks.get(session_id)
+    if not task_id:
+        emit("task_status", {"phase": "error", "message": "Aktif gorev bulunamadi"})
+        return
+    executor = get_executor()
+    ok = executor.pause(task_id)
+    emit("task_status", {
+        "phase": "paused" if ok else "error",
+        "message": "Durduruldu" if ok else "Durdurulamadi",
+        "task_id": task_id,
+    })
+
+
+@socketio.on("resume_task")
+def on_resume_task(data):
+    """Resume the paused task for a session."""
+    session_id = data.get("session_id", "default")
+    task_id = _socket_tasks.get(session_id)
+    if not task_id:
+        emit("task_status", {"phase": "error", "message": "Aktif gorev bulunamadi"})
+        return
+    executor = get_executor()
+    ok = executor.resume(task_id)
+    emit("task_status", {
+        "phase": "resumed" if ok else "error",
+        "message": "Devam ediyor" if ok else "Devam ettirilemedi",
+        "task_id": task_id,
+    })
+
+
+@socketio.on("cancel_task")
+def on_cancel_task(data):
+    """Cancel the current task for a session."""
+    session_id = data.get("session_id", "default")
+    task_id = _socket_tasks.get(session_id)
+    if not task_id:
+        emit("task_status", {"phase": "error", "message": "Aktif gorev bulunamadi"})
+        return
+    executor = get_executor()
+    ok = executor.cancel(task_id)
+    emit("task_status", {
+        "phase": "cancelled" if ok else "error",
+        "message": "Iptal edildi" if ok else "Iptal edilemedi",
+        "task_id": task_id,
+    })
+
+
 # ─── Baslangic ─────────────────────────────────────────
 
 # Initialize conversation store DB on startup

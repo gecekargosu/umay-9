@@ -27,6 +27,65 @@ app = Flask(__name__, template_folder="templates", static_folder="static")
 app.config["SECRET_KEY"] = os.getenv("UMAY_SECRET_KEY", "change-me-local-only")
 socketio = SocketIO(app, cors_allowed_origins=["http://localhost:5001", "http://127.0.0.1:5001"], async_mode="threading")
 
+# ─── Host Filesystem Path Resolution + Sandbox ──────────────────────────────
+# Windows host user folders are mounted to /host/* in the container.
+# This function maps Windows paths to container paths with sandbox security.
+
+_ALLOWED_HOST_ROOTS = ["/host/Desktop", "/host/Documents", "/host/Downloads"]
+
+def _resolve_host_path(path_str: str) -> str | None:
+    """Resolve a Windows host path to container path with sandbox security.
+    
+    Returns:
+        Container path if allowed, None if blocked.
+    
+    Security:
+        - Only /host/Desktop, /host/Documents, /host/Downloads are allowed.
+        - Path traversal (..) is blocked.
+        - Non-existent paths return None.
+    """
+    if not path_str:
+        return None
+    
+    # Block path traversal
+    if ".." in path_str:
+        return None
+    
+    # Map Windows paths to container paths
+    _win_to_container = {
+        "c:\\users\\isitm\\desktop": "/host/Desktop",
+        "c:\\users\\isitm\\documents": "/host/Documents",
+        "c:\\users\\isitm\\downloads": "/host/Downloads",
+        "c:\\users\\isitm\\masaustu": "/host/Desktop",
+        "c:\\users\\isitm\\belgeler": "/host/Documents",
+        "c:\\users\\isitm\\indirilenler": "/host/Downloads",
+    }
+    
+    # Normalize path for comparison
+    path_lower = path_str.lower().replace("\\\\", "/").replace("\\", "/")
+    
+    # Check exact mapping first
+    for win_path, container_path in _win_to_container.items():
+        if path_lower.startswith(win_path):
+            # Check if target exists
+            target = container_path
+            if os.path.exists(target):
+                return target
+            return None
+    
+    # Check if path starts with /host/ (already a container path)
+    if path_str.startswith("/host/"):
+        # Validate against allowed roots
+        for root in _ALLOWED_HOST_ROOTS:
+            if path_str == root or path_str.startswith(root + "/"):
+                if os.path.exists(path_str):
+                    return path_str
+                return None
+        return None
+    
+    # Not a host path — return as-is (local container path)
+    return path_str
+
 # Global durum
 browser_agent = None
 agent_aktif = False
@@ -39,6 +98,7 @@ _browser_lock = threading.Lock()
 # STEP-01. The three helper functions below keep their original signatures
 # and behavior on purpose so nothing else in this file has to change.
 from core import conversation_store as _conv_store
+from core.task_executor import get_executor, check_pause, check_cancel, TaskCancelledException
 _MAX_HISTORY = 20  # max mesaj çifti (40 mesaj) — same window as before
 
 # Image store — hash -> base64 (for vision requests)
@@ -402,9 +462,17 @@ def chat_clear():
     return jsonify({"ok": True, "message": "Session cleared"})
 
 
-@app.route("/api/chat", methods=["POST"])
-def chat_api():
-    """UMAY chat API'si — tool calling + real-time status destekli."""
+# ─── STEP-05: Background Chat Execution ──────────────────────────────────────
+
+def execute_chat_task(task_id, session_id, soru, attachments, *, on_status=None, on_complete=None, on_error=None, model_override="auto", mode="auto"):
+    """Background chat execution — runs inside TaskExecutor thread.
+
+    Contains the full STEP-04 chat logic (tool calling, vision routing,
+    token budget, context compression, failure recovery) with cooperative
+    pause/cancel checkpoints injected at safe points (before each model call).
+
+    Called by TaskExecutor.submit() in a background thread.
+    """
     from core.engine import chat as umay_chat, resolve_model
     from core.router import model_sec
     from core.agent_tools import TOOLS, DISPATCH
@@ -412,23 +480,43 @@ def chat_api():
         _parse_tool_calls, _assistant_tool_message,
         _tool_messages, _bounded_tool_result,
     )
+    from core.identity import UMAY_SYSTEM as _UMAY_SYSTEM, CHAT_IDENTITY as _CHAT_IDENTITY
 
-    veri = request.json
-    soru = veri.get("soru", "")
-    session_id = veri.get("session_id", "default")
-    attachments = veri.get("attachments", [])  # List of attachment dicts from frontend
+    # ── Intent Router entegrasyonu ──────────────────────────────────────
+    try:
+        from core.intent_router import classify_intent, get_available_tools as _intent_tools, Intent
+        _intent = classify_intent(soru)
+        _intent_tools_list = _intent_tools(_intent)
+    except ImportError:
+        _intent = None
+        _intent_tools_list = None
+
     t_start = time.time()
 
-    # Real-time status: Düşünüyor
-    socketio.emit("task_status", {
-        "phase": "thinking",
-        "message": "Düşünüyor...",
-        "icon": "🧠"
-    })
+    if on_status:
+        on_status(task_id, "thinking", "Düşüniyor...")
 
-    # Initialize defaults
-    model = None
+    # Initialize defaults — respect user's model/mode selection
+    model = model_override if model_override and model_override != "auto" else None
     gorev = "chat"
+
+    # ── MODE ROUTING ──
+    # Check internet connectivity for ONLINE/AUTO mode
+    _internet_ok = True
+    try:
+        import urllib.request as _urlreq
+        _urlreq.urlopen("https://www.google.com", timeout=3)
+    except Exception:
+        _internet_ok = False
+
+    # If LOCAL mode and intent requires web, override to local-only behavior
+    if mode == "local" and _intent == Intent.WEB:
+        # LOCAL mode: web research not available, use knowledge response
+        _intent = Intent.KNOWLEDGE
+        _intent_tools_list = None
+    elif mode == "online" and not _internet_ok:
+        # ONLINE mode but no internet: fall back to local
+        mode = "local"
 
     # Check if any attachment is an image -> route to vision model
     has_image = any(a.get("is_vision") or a.get("type") == "image" for a in attachments)
@@ -438,94 +526,315 @@ def chat_api():
             model = vision_model
             gorev = "vision"
         else:
-            # No vision model available, strip image refs and continue
             attachments = [a for a in attachments if a.get("type") != "image"]
             has_image = False
-            socketio.emit("task_status", {
-                "phase": "warning",
-                "message": "Vision model bulunamadı, görsel analiz yapılamıyor.",
-                "icon": "⚠️"
-            })
+            if on_status:
+                on_status(task_id, "warning", "Vision model bulunamadı.")
 
     # Router ile gorev ve model sec (if not overridden by vision)
     t_router = time.time()
     if gorev != "vision":
-        model, gorev = model_sec(soru)
-        model = model or resolve_model("chat")
+        if _intent is not None and _intent_tools_list is not None:
+            # Intent router tool kullanacaksa ona göre model seç
+            # MODE-AWARE: LOCAL mode sadece local model kullanır
+            if mode == "local":
+                # LOCAL: sadece local model, online provider kullanma
+                model = resolve_model("chat")
+                gorev = "chat"
+            else:
+                # AUTO/ONLINE: full routing
+                model, gorev = model_sec(soru)
+                model = model or resolve_model("chat")
+        elif _intent is not None and _intent in (Intent.CHAT, Intent.KNOWLEDGE):
+            # Basit sohbet/bilgi → chat model, tool yok
+            gorev = "chat"
+            model = resolve_model("chat")
+        else:
+            model, gorev = model_sec(soru)
+            model = model or resolve_model("chat")
     t_router_done = time.time()
 
-    # Tool calling: sadece gercekten tool gerektiren gorevlerde aktif
-    use_tools = gorev in ("coding", "agent")
+    # Tool calling: Intent Router'a göre tool seçimi
+    if _intent_tools_list is not None:
+        use_tools = True
+        # Intent-based tool listesi kullan
+        active_tools = [t for t in TOOLS if t["function"]["name"] in _intent_tools_list]
+    elif gorev in ("coding", "agent"):
+        use_tools = True
+        active_tools = TOOLS
+    else:
+        use_tools = False
+        active_tools = None
+
+    # System prompt seçimi: CHAT/KNOWLEDGE intent'leri için CHAT_IDENTITY kullan
+    if _intent in (Intent.CHAT, Intent.KNOWLEDGE):
+        _system_prompt = _CHAT_IDENTITY
+    else:
+        _system_prompt = _UMAY_SYSTEM
+
+    # ── DIRECT TOOL EXECUTION (TIME/CALCULATOR/FILE/DOCUMENT) ──
+    # These tools are deterministic and don't need LLM involvement
+    if _intent in (Intent.TIME, Intent.CALCULATOR, Intent.FILE, Intent.DOCUMENT) and _intent_tools_list and not has_image:
+        try:
+            from core.agent_tools import DISPATCH as _DISPATCH
+            tool_results = []
+            for tool_name in _intent_tools_list:
+                if tool_name in _DISPATCH:
+                    t_tool_start = time.time()
+                    # Determine args based on intent
+                    tool_args = {}
+                    if _intent == Intent.TIME:
+                        # TIME tools: get_current_time needs timezone, get_current_date needs nothing
+                        if tool_name == "get_current_time":
+                            tool_args = {"timezone": "Europe/Istanbul"}
+                        # get_current_date takes no required args
+                    elif _intent == Intent.CALCULATOR:
+                        # Extract math expression from message
+                        import re as _re
+
+                        # 1. Try Turkish natural language → math conversion
+                        _soru_lower_calc = soru.lower().strip()
+                        _calc_expr = None
+
+                        # "X in karesi" → X**2 (apostrophe between digit and suffix)
+                        _m = _re.search(r"(\d+)[\x27'\s]*(?:nin|nın|ün|ün|in|in)\s*karesi(?:ni)?", _soru_lower_calc)
+                        if _m:
+                            _calc_expr = f"{_m.group(1)}**2"
+
+                        # "X in kupu" → X**3 (apostrophe between digit and suffix)
+                        if not _calc_expr:
+                            _m = _re.search(r"(\d+)[\x27'\s]*(?:nin|nın|ün|ün|in|in)\s*(?:k[üu]p[üu]n[üu]|k[üu]p[üu])", _soru_lower_calc)
+                            if _m:
+                                _calc_expr = f"{_m.group(1)}**3"
+
+                        # "X ile Y topla" / "X i Y ye topla" → X+Y
+                        if not _calc_expr:
+                            _m = _re.search(r'(\d+)\s*(?:ile|i|yi|yı)\s*(\d+)\s*topla', _soru_lower_calc)
+                            if _m:
+                                _calc_expr = f"{_m.group(1)}+{_m.group(2)}"
+
+                        # "X den Y cikar" → X-Y
+                        if not _calc_expr:
+                            _m = _re.search(r'(\d+)\s*den\s*(\d+)\s*(?:c[iı]kar|c[iı]kart)', _soru_lower_calc)
+                            if _m:
+                                _calc_expr = f"{_m.group(1)}-{_m.group(2)}"
+
+                        # "X ile Y carp" → X*Y
+                        if not _calc_expr:
+                            _m = _re.search(r'(\d+)\s*(?:ile|i|yi|yı)\s*(\d+)\s*(?:[cç][aı]rp)', _soru_lower_calc)
+                            if _m:
+                                _calc_expr = f"{_m.group(1)}*{_m.group(2)}"
+
+                        # "X u Y e bol" → X/Y (optional 'e' before bol)
+                        if not _calc_expr:
+                            _m = _re.search(r'(\d+)\s*(?:[üu]|yi|yı)\s*(\d+)\s*(?:e\s*)?b[öo]l', _soru_lower_calc)
+                            if _m:
+                                _calc_expr = f"{_m.group(1)}/{_m.group(2)}"
+
+                        if _calc_expr:
+                            tool_args = {"expression": _calc_expr}
+                        else:
+                            # 2. Try direct math expression like 9*8, 3+5, 9/1*2-3+4
+                            math_match = _re.search(r'([\d]+\s*[+\-*/÷×^]\s*[\d]+[\s+\-*/÷×^\d]*)', soru)
+                            if math_match:
+                                tool_args = {"expression": math_match.group(1).strip()}
+                            else:
+                                # 3. Fallback: strip non-math characters
+                                tool_args = {"expression": _re.sub(r'[^\d+\-*/().^\s]', '', soru).strip()}
+                    elif _intent == Intent.FILE:
+                        # Only run appropriate tool based on message keywords
+                        _soru_lower_file = soru.lower()
+                        _is_list = any(w in _soru_lower_file for w in ['listele', 'listele', 'goster', 'göster', 'icerik', 'içerik', 'ne var'])
+                        _is_read = any(w in _soru_lower_file for w in ['oku', 'okuma', 'ac', 'aç', 'icerigi', 'içeriği'])
+                        _is_search = any(w in _soru_lower_file for w in ['ara', 'bul', 'search', 'find'])
+                        # Skip tools that don't match the message intent
+                        if _is_list and tool_name not in ('list_directory', 'scan_directory'):
+                            continue
+                        if _is_read and tool_name not in ('read_file', 'read_document'):
+                            continue
+                        if _is_search and tool_name not in ('search_files', 'search_in_documents'):
+                            continue
+                        if tool_name == "list_directory":
+                            # Extract path from message or use workspace
+                            import re as _re
+                            _resolved_path = None
+                            # Try Windows absolute path first
+                            path_match = _re.search(r'[A-Za-z]:\\[^\s"\'<>]+', soru)
+                            if path_match:
+                                _resolved_path = _resolve_host_path(path_match.group(1))
+                            if not _resolved_path:
+                                # Resolve common Turkish folder names to host paths
+                                _soru_lower = soru.lower()
+                                _folder_map = {
+                                    'masaüstü': '/host/Desktop', 'masaustu': '/host/Desktop',
+                                    'masaüstündeki': '/host/Desktop', 'masaustundeki': '/host/Desktop',
+                                    'masaüstünü': '/host/Desktop', 'masaustunu': '/host/Desktop',
+                                    'masaüstünde': '/host/Desktop', 'masaustunde': '/host/Desktop',
+                                    'belgeler': '/host/Documents', 'belgeleri': '/host/Documents',
+                                    'belgelerdeki': '/host/Documents',
+                                    'indirilenler': '/host/Downloads', 'downloads': '/host/Downloads',
+                                    'desktop': '/host/Desktop', 'documents': '/host/Documents',
+                                }
+                                for key, container_path in _folder_map.items():
+                                    if key in _soru_lower:
+                                        if os.path.exists(container_path):
+                                            _resolved_path = container_path
+                                        break
+                            if _resolved_path:
+                                tool_args = {"path": _resolved_path}
+                            else:
+                                tool_args = {"path": "."}
+                        elif tool_name == "read_file":
+                            # Try to find a file path in the message
+                            import re as _re
+                            file_match = _re.search(r'[A-Za-z]:\\[^\s"\'<>]+\.\w+', soru)
+                            if file_match:
+                                tool_args = {"path": file_match.group(1)}
+                            else:
+                                continue  # Skip if no file path found
+                        elif tool_name == "search_files":
+                            # Extract search pattern from message
+                            tool_args = {"pattern": soru, "path": "."}
+                    elif _intent == Intent.DOCUMENT:
+                        if tool_name == "read_document":
+                            import re as _re
+                            doc_match = _re.search(r'[A-Za-z]:\\[^\s"\'<>]+\.\w+', soru)
+                            if doc_match:
+                                tool_args = {"path": doc_match.group(1)}
+                            else:
+                                continue
+                        elif tool_name == "scan_directory":
+                            tool_args = {"path": "."}
+                    try:
+                        tool_result = _DISPATCH[tool_name](**tool_args)
+                        t_tool_done = time.time()
+                        tool_results.append({
+                            "tool": tool_name,
+                            "result": tool_result,
+                            "duration": round(t_tool_done - t_tool_start, 2),
+                            "status": "PASS"
+                        })
+                    except Exception:
+                        continue  # Skip tools that fail for lack of args
+            # Build response from tool results
+            if tool_results:
+                result_parts = []
+                for tr in tool_results:
+                    r = tr["result"]
+                    if "formatted" in r: result_parts.append(r["formatted"])
+                    elif "time" in r: result_parts.append(f"Saat: {r['time']}")
+                    elif "result" in r: result_parts.append(f"Sonuc: {r['result']}")
+                    elif "date" in r: result_parts.append(f"Tarih: {r['date']}")
+                    elif "entries" in r:
+                        # File listing
+                        entries = r["entries"]
+                        count = r.get("count", len(entries))
+                        listing = "\n".join([f"  {e['path']} ({e['type']})" for e in entries[:20]])
+                        result_parts.append(f"{count} dosya/klasor bulundu:\n{listing}")
+                    elif "content" in r:
+                        # File content
+                        content = r["content"][:500]
+                        result_parts.append(f"Dosya icerigi:\n{content}")
+                    elif "matches" in r:
+                        # Search results
+                        matches = r["matches"]
+                        result_parts.append(f"{len(matches)} eslesme bulundu")
+                    elif "file_count" in r:
+                        # Document/Directory scan — show summary + top files
+                        fc = r['file_count']
+                        tc = r.get('type_counts', {})
+                        top_files = r.get('files', [])[:10]
+                        type_summary = ", ".join([f"{v} {k}" for k, v in sorted(tc.items(), key=lambda x: -x[1])[:5]])
+                        listing = "\n".join([f"  {f.get('name', f.get('path', ''))} ({f.get('type', '')})" for f in top_files])
+                        result_parts.append(f"{fc} dosya bulundu ({type_summary}):\n{listing}")
+                    elif "results" in r and isinstance(r["results"], list):
+                        # Document search
+                        results = r["results"]
+                        result_parts.append(f"{len(results)} sonuc bulundu")
+                    else: result_parts.append(str(r)[:300])
+                cevap = "\n".join(result_parts)
+                t_end = time.time()
+                latency = {
+                    "total": round(t_end - t_start, 2),
+                    "router": round(t_router_done - t_router, 3),
+                    "model": 0,
+                    "tool": tool_results[0]["duration"] if tool_results else 0,
+                }
+                _add_to_history(session_id, "user", soru)
+                _add_to_history(session_id, "assistant", cevap)
+                resp_data = {
+                    "cevap": cevap,
+                    "model": "direct",
+                    "gorev": _intent.value,
+                    "latency": latency,
+                    "tool": tool_results[0]["tool"] if tool_results else None,
+                    "tool_status": "PASS",
+                    "tool_result": str(tool_results[0]["result"])[:200] if tool_results else None,
+                    "mode": mode,
+                }
+                if on_complete:
+                    on_complete(task_id, resp_data)
+                return
+        except Exception as direct_exc:
+            # Fall through to normal LLM path
+            pass
 
     # Build context from attachments
-    from core.attachment_engine import build_chat_context, build_vision_message
+    from core.attachment_engine import build_chat_context
     att_context = build_chat_context(attachments, soru)
 
     # Session history — conversation context korunur
     history = _get_session_history(session_id)
     messages = [
-        {"role": "system", "content": UMAY_SYSTEM},
+        {"role": "system", "content": _system_prompt},
         *history,
         {"role": "user", "content": att_context}
     ]
 
     # STEP-04.3: Pre-flight token budget check
-    from core.token_budget import estimate_usage, check_budget, STATUS_OK
+    from core.token_budget import estimate_usage, check_budget
     preflight_usage = estimate_usage(messages)
     preflight_check = check_budget(preflight_usage)
     if preflight_check.status != "OK":
-        socketio.emit("task_status", {
-            "phase": "budget_warning",
-            "message": f"Token bütçesi {preflight_check.status}: ~{preflight_check.used_tokens}/{preflight_check.limit_tokens} ({round(preflight_check.ratio * 100, 1)}%)",
-            "icon": "⚠️" if preflight_check.status == "WARNING" else "🔴",
-            "budget": preflight_check.as_dict()
-        })
+        if on_status:
+            on_status(task_id, "budget_warning",
+                     f"Token bütçesi {preflight_check.status}: ~{preflight_check.used_tokens}/{preflight_check.limit_tokens}",
+                     budget=preflight_check.as_dict())
 
-    # STEP-04.4: Context compression — compress older messages if budget exceeded
+    # STEP-04.4: Context compression
     from core.context_compression import compress_context
     compression_result = compress_context(messages)
     if compression_result.was_compressed:
         messages = compression_result.compressed_messages
-        socketio.emit("task_status", {
-            "phase": "context_compressed",
-            "message": f"Bağlam sıkıştırıldı: {compression_result.original_count} → {compression_result.compressed_count} mesaj (~{compression_result.tokens_saved_estimate} token tasarruf)",
-            "icon": "📦",
-            "compression": compression_result.as_dict()
-        })
+        if on_status:
+            on_status(task_id, "context_compressed",
+                     f"Bağlam sıkıştırıldı: {compression_result.original_count} → {compression_result.compressed_count}")
 
     # If vision, find the stored image and read its base64
     vision_image = None
     if has_image:
         for a in attachments:
             if a.get("is_vision") or a.get("type") == "image":
-                # Find the stored file by hash and read base64
                 vision_image = _resolve_image_base64(a)
                 break
 
     if has_image and vision_image:
-        # Vision request — use Ollama vision API directly
-        socketio.emit("task_status", {
-            "phase": "calling_model",
-            "message": f"Görsel analiz modeli çağrılıyor ({model})...",
-            "icon": "👁️",
-            "model": model,
-            "task": "vision"
-        })
+        # ── VISION PATH ──
+        if on_status:
+            on_status(task_id, "calling_model", f"Görsel analiz modeli çağrılıyor ({model})...")
+
+        # Cooperative pause/cancel checkpoint — before model call
+        check_cancel(task_id)
+        check_pause(task_id)
 
         t_model_start = time.time()
         try:
             import requests as _req
             from core.engine import OLLAMA_URL
 
-            # Build vision messages with image.
-            # STEP-04.5 fix: use att_context (built above from ALL
-            # attachments — image placeholder + every other attachment's
-            # extracted text) instead of raw `soru`. Previously this used
-            # `soru` alone, so any PDF/code/text attachment sent alongside
-            # an image in the same turn was silently dropped from what the
-            # vision model saw.
+            # STEP-04.5 fix: use att_context (not raw soru)
             vision_msgs = [
-                {"role": "system", "content": UMAY_SYSTEM},
+                {"role": "system", "content": _UMAY_SYSTEM},
                 {"role": "user", "content": att_context, "images": [vision_image]}
             ]
             r = _req.post(
@@ -537,7 +846,6 @@ def chat_api():
             if r.ok:
                 vision_resp = r.json()
                 cevap = vision_resp.get("message", {}).get("content", "Görsel analiz yapılamadı.")
-                # STEP-04.3: Extract real token usage from vision Ollama response
                 from core.token_budget import usage_from_ollama_response
                 vision_usage = usage_from_ollama_response(vision_resp)
             else:
@@ -555,11 +863,6 @@ def chat_api():
             "model": round(t_model_done - t_model_start, 2),
         }
         is_vision_error = 'vision_error' in dir() and vision_error
-        socketio.emit("task_status", {
-            "phase": "completed" if not is_vision_error else "error",
-            "message": f"{'Görsel analiz hatası' if is_vision_error else 'Görsel analiz tamamlandı'}. ({latency['total']}s)",
-            "icon": "🟢" if not is_vision_error else "❌"
-        })
         _add_to_history(session_id, "user", soru)
         _add_to_history(session_id, "assistant", cevap)
         resp_data = {"cevap": cevap, "model": model, "gorev": gorev, "latency": latency}
@@ -567,57 +870,62 @@ def chat_api():
             resp_data["usage"] = vision_usage.as_dict()
         if is_vision_error:
             resp_data["error"] = True
-        return jsonify(resp_data)
+        if on_complete:
+            on_complete(task_id, resp_data)
 
     elif use_tools:
-        # Real-time status: Model çağrılıyor
-        socketio.emit("task_status", {
-            "phase": "calling_model",
-            "message": f"Model çağrılıyor ({model or 'auto'})...",
-            "icon": "⚡",
-            "model": model,
-            "task": gorev
-        })
+        # ── TOOL CALLING PATH ──
+        if on_status:
+            on_status(task_id, "calling_model", f"Model çağrılıyor ({model or 'auto'})...")
 
-        # Tool calling: 1 tool call, sonucu direkt don
+        # Cooperative pause/cancel checkpoint — before model call
+        check_cancel(task_id)
+        check_pause(task_id)
+
         t_model_start = time.time()
         try:
-            result = umay_chat(messages, model=model, tools=TOOLS)
+            result = umay_chat(messages, model=model, tools=active_tools if use_tools else None)
         except Exception as tool_exc:
             t_model_done = time.time()
-            socketio.emit("task_status", {"phase": "error", "message": f"Tool model hatası: {tool_exc}", "icon": "❌"})
+            if on_status:
+                on_status(task_id, "error", f"Tool model hatası: {tool_exc}")
             _add_to_history(session_id, "user", soru)
             _add_to_history(session_id, "assistant", f"[Hata: {tool_exc}]")
-            return jsonify(graceful_error_response(tool_exc, model=model))
+            if on_error:
+                on_error(task_id, {"error": str(tool_exc)})
+            return
         t_model_done = time.time()
         msg = result.get("message", {}) if isinstance(result, dict) else {}
         tool_usage = result.get("usage") if isinstance(result, dict) else None
         tool_calls = _parse_tool_calls(msg)
+        last_tool_name = None
+        last_tool_status = None
+        last_tool_duration = None
+        last_tool_result = None
 
         if tool_calls:
-            # Real-time status: Tool çalışıyor
             for tc in tool_calls:
                 func_name = tc.get("function", {}).get("name", "unknown")
-                socketio.emit("task_status", {
-                    "phase": "tool_running",
-                    "message": f"Tool çalışıyor: {func_name}",
-                    "icon": "🔧",
-                    "tool": func_name
-                })
+                last_tool_name = func_name
+                if on_status:
+                    on_status(task_id, "tool_running", f"Tool çalışıyor: {func_name}")
 
-            # Tool sonucunu al ve model'e goster
             messages.append(_assistant_tool_message(tool_calls))
             tool_msgs = _tool_messages(tool_calls)
             messages.extend(tool_msgs)
+            # Extract tool result info
+            if tool_msgs:
+                last_tool_result_raw = tool_msgs[-1].get("content", "")
+                last_tool_result = last_tool_result_raw[:200] if last_tool_result_raw else None
+                last_tool_status = "PASS"
 
-            # Real-time status: Tool tamamlandı
-            socketio.emit("task_status", {
-                "phase": "tool_done",
-                "message": "Tool tamamlandı, yanıt oluşturuluyor...",
-                "icon": "✅"
-            })
+            if on_status:
+                on_status(task_id, "tool_done", "Tool tamamlandı, yanıt oluşturuluyor...")
 
-            # Tool sonucunu basitce formatla
+            # Cooperative pause/cancel checkpoint — after tool execution
+            check_cancel(task_id)
+            check_pause(task_id)
+
             last_result = tool_msgs[-1].get("content", "") if tool_msgs else ""
             try:
                 import json as _json
@@ -635,37 +943,34 @@ def chat_api():
         else:
             cevap = msg.get("content", "") if msg else str(result)
 
-        # Real-time status: Tamamlandı
         t_end = time.time()
         latency = {
             "total": round(t_end - t_start, 2),
             "router": round(t_router_done - t_router, 3),
             "model": round(t_model_done - t_model_start, 2),
         }
-        socketio.emit("task_status", {
-            "phase": "completed",
-            "message": f"Görev tamamlandı. ({latency['total']}s)",
-            "icon": "🟢"
-        })
-
-        # Session history'ye kaydet
         _add_to_history(session_id, "user", soru)
         _add_to_history(session_id, "assistant", cevap)
-
         resp_data = {"cevap": cevap, "model": model, "gorev": gorev, "latency": latency}
+        if last_tool_name:
+            resp_data["tool"] = last_tool_name
+            resp_data["tool_status"] = last_tool_status or "PASS"
+            resp_data["tool_result"] = last_tool_result
         if tool_usage:
             resp_data["usage"] = tool_usage
-        return jsonify(resp_data)
+        if on_complete:
+            on_complete(task_id, resp_data)
+
     else:
-        # Basit sohbet — tool calling yok, hizli cevap
-        socketio.emit("task_status", {
-            "phase": "calling_model",
-            "message": f"Sohbet modeli çağrılıyor ({model or 'auto'})...",
-            "icon": "💬",
-            "model": model
-        })
+        # ── SIMPLE CHAT PATH (no tools) ──
+        if on_status:
+            on_status(task_id, "calling_model", f"Sohbet modeli çağrılıyor ({model or 'auto'})...")
+
+        # Cooperative pause/cancel checkpoint — before model call
+        check_cancel(task_id)
+        check_pause(task_id)
+
         t_model_start = time.time()
-        # Build final user content with attachment context
         user_content = att_context if attachments else soru
         messages[-1] = {"role": "user", "content": user_content}
 
@@ -675,17 +980,17 @@ def chat_api():
         t_model_done = time.time()
 
         if not recovery.success:
-            socketio.emit("task_status", {
-                "phase": "error",
-                "message": f"Model hatası ({recovery.attempts} deneme)",
-                "icon": "❌"
-            })
+            if on_status:
+                on_status(task_id, "error", f"Model hatası ({recovery.attempts} deneme)")
             _add_to_history(session_id, "user", soru)
             _add_to_history(session_id, "assistant", "[Hata: model yanıt üretemedi]")
-            return jsonify(graceful_error_response(
+            error_data = graceful_error_response(
                 RuntimeError(recovery.errors[-1] if recovery.errors else "Unknown error"),
                 model=model, recovery_result=recovery,
-            ))
+            )
+            if on_error:
+                on_error(task_id, error_data)
+            return
 
         result = recovery.result
         msg = result.get("message", {}) if isinstance(result, dict) else {}
@@ -698,22 +1003,193 @@ def chat_api():
             "router": round(t_router_done - t_router, 3),
             "model": round(t_model_done - t_model_start, 2),
         }
-        socketio.emit("task_status", {
-            "phase": "completed",
-            "message": f"Yanıt hazır. ({latency['total']}s)" + (f" [retry: {recovery.attempts}x]" if recovery.attempts > 1 else ""),
-            "icon": "🟢"
-        })
-
-        # Session history'ye kaydet
         _add_to_history(session_id, "user", soru)
         _add_to_history(session_id, "assistant", cevap)
-
         resp_data = {"cevap": cevap, "model": model, "gorev": gorev, "latency": latency}
         if plain_usage:
             resp_data["usage"] = plain_usage
         if recovery.attempts > 1:
             resp_data["recovery"] = recovery.as_dict()
-        return jsonify(resp_data)
+        if on_complete:
+            on_complete(task_id, resp_data)
+
+
+# ─── STEP-05: SocketIO Callbacks ────────────────────────────────────────────
+
+def _emit_task_status(task_id, phase, message, **extra):
+    """Callback for TaskExecutor — emit SocketIO task_status events."""
+    data = {
+        "phase": phase,
+        "message": message,
+        "task_id": task_id,
+    }
+    data.update(extra)
+    socketio.emit("task_status", data)
+
+
+def _on_task_complete(task_id, result):
+    """Callback for TaskExecutor — task finished successfully."""
+    socketio.emit("task_completed", {
+        "task_id": task_id,
+        "result": result,
+    })
+
+
+def _on_task_error(task_id, error):
+    """Callback for TaskExecutor — task failed."""
+    socketio.emit("task_completed", {
+        "task_id": task_id,
+        "error": error,
+    })
+
+
+# ─── STEP-05: Chat API (Background Task) ─────────────────────────────────────
+
+@app.route("/api/chat", methods=["POST"])
+def chat_api():
+    """UMAY chat API — STEP-05 background task execution.
+
+    Creates a background task via TaskExecutor, blocks until completion,
+    then returns {cevap, model, latency} for the frontend.
+    SocketIO events are also emitted for real-time status updates.
+    STEP-04 features (token budget, compression, recovery) preserved.
+    """
+    veri = request.json
+    soru = veri.get("soru", "")
+    session_id = veri.get("session_id", "default")
+    attachments = veri.get("attachments", [])
+    model_override = veri.get("model", "auto")
+    mode = veri.get("mode", "auto")
+
+    if not soru and not attachments:
+        return jsonify({"error": "Soru bos"}), 400
+
+    # STEP-05: Create task via task_state
+    from core import task_state
+    task_id = task_state.start_task(
+        request=soru[:200],
+        workspace=session_id,
+        model="auto",
+    )
+
+    # STEP-05: Link conversation to task
+    _conv_store.set_last_task_id(session_id, task_id)
+
+    # Emit task_created event
+    socketio.emit("task_status", {
+        "phase": "task_created",
+        "message": f"Görev oluşturuldu: {task_id}",
+        "icon": "📋",
+        "task_id": task_id,
+        "session_id": session_id,
+    })
+
+    # STEP-05: Submit to background executor
+    executor = get_executor()
+    executor.submit(
+        session_id=session_id,
+        soru=soru,
+        execute_fn=execute_chat_task,
+        attachments=attachments,
+        task_id=task_id,
+        on_status=_emit_task_status,
+        on_complete=_on_task_complete,
+        on_error=_on_task_error,
+        model_override=model_override,
+        mode=mode,
+    )
+
+    # STEP-05: Block until task completes (preserves STEP-04 sync behavior)
+    # This ensures frontend gets {cevap, model, latency} in the HTTP response.
+    result = executor.wait_for_completion(task_id, timeout=300)
+
+    if result and isinstance(result, dict):
+        # Ensure standard response format for frontend
+        resp = {
+            "cevap": result.get("cevap", ""),
+            "model": result.get("model", "auto"),
+            "gorev": result.get("gorev", "chat"),
+            "latency": result.get("latency", {}),
+            "task_id": task_id,
+            "mode": result.get("mode", mode),
+        }
+        if "usage" in result:
+            resp["usage"] = result["usage"]
+        if "error" in result:
+            resp["error"] = result["error"]
+        return jsonify(resp)
+    else:
+        return jsonify({"cevap": "Task zaman asimi", "model": "auto", "latency": {"total": 0}})
+
+
+# ─── STEP-05: Task Management Endpoints ──────────────────────────────────────
+
+@app.route("/api/chat/tasks", methods=["GET"])
+def chat_tasks_list():
+    """List tasks — STEP-03/STEP-05 task listing."""
+    session_id = request.args.get("session_id", "default")
+    limit = request.args.get("limit", 20, type=int)
+
+    executor = get_executor()
+    executor_tasks = executor.get_tasks_by_session(session_id)
+
+    from core import task_state
+    try:
+        ws_tasks = task_state.list_tasks_for_workspace(session_id, limit=limit)
+    except Exception:
+        ws_tasks = []
+
+    return jsonify({
+        "session_id": session_id,
+        "active_tasks": executor_tasks,
+        "historical_tasks": ws_tasks,
+        "total": len(executor_tasks) + len(ws_tasks),
+    })
+
+
+@app.route("/api/chat/tasks/<task_id>", methods=["GET"])
+def chat_task_detail(task_id):
+    """Get task detail — STEP-05."""
+    executor = get_executor()
+    info = executor.get_task_info(task_id)
+    if info:
+        return jsonify(info)
+
+    from core import task_state
+    task = task_state.load_task(task_id)
+    if task:
+        return jsonify(task)
+    return jsonify({"error": "Task not found"}), 404
+
+
+@app.route("/api/chat/tasks/<task_id>/pause", methods=["POST"])
+def chat_task_pause(task_id):
+    """Pause a running task — STEP-05."""
+    executor = get_executor()
+    ok = executor.pause(task_id)
+    if ok:
+        return jsonify({"ok": True, "status": "PAUSE_REQUESTED"})
+    return jsonify({"ok": False, "error": "Task not pausable"}), 400
+
+
+@app.route("/api/chat/tasks/<task_id>/resume", methods=["POST"])
+def chat_task_resume(task_id):
+    """Resume a paused task — STEP-05."""
+    executor = get_executor()
+    ok = executor.resume(task_id)
+    if ok:
+        return jsonify({"ok": True, "status": "RESUMING"})
+    return jsonify({"ok": False, "error": "Task not resumable"}), 400
+
+
+@app.route("/api/chat/tasks/<task_id>/cancel", methods=["POST"])
+def chat_task_cancel(task_id):
+    """Cancel a running task — STEP-05."""
+    executor = get_executor()
+    ok = executor.cancel(task_id)
+    if ok:
+        return jsonify({"ok": True, "status": "CANCEL_REQUESTED"})
+    return jsonify({"ok": False, "error": "Task not cancellable"}), 400
 
 
 # ─── Dashboard API ─────────────────────────────────────
@@ -881,6 +1357,52 @@ def config_api():
         "gmail_configured": bool(os.getenv("GMAIL_USER")),
         "gemini_configured": bool(os.getenv("GEMINI_API_KEY")),
     })
+
+
+@app.route("/api/models")
+def models_api():
+    """List available models with capabilities for model selector."""
+    try:
+        from core.engine import installed_models, MODEL_PREFERENCES, OLLAMA_URL
+        import requests as _req
+        models = installed_models()
+        # Categorize models
+        categorized = {
+            "chat": MODEL_PREFERENCES.get("chat", []),
+            "coding": MODEL_PREFERENCES.get("coding", []),
+            "vision": MODEL_PREFERENCES.get("vision", []),
+            "reasoning": MODEL_PREFERENCES.get("reasoning", []),
+            "analysis": MODEL_PREFERENCES.get("analysis", []),
+        }
+        # Match installed models to categories
+        result = []
+        for m in models:
+            cats = []
+            for cat, prefs in categorized.items():
+                for p in prefs:
+                    if m == p or m.split(":")[0] == p.split(":")[0]:
+                        cats.append(cat)
+                        break
+            result.append({
+                "name": m,
+                "categories": cats if cats else ["general"],
+                "tags": cats,
+            })
+        return jsonify({"models": result, "total": len(result)})
+    except Exception as e:
+        return jsonify({"models": [], "total": 0, "error": str(e)})
+
+
+@app.route("/api/chat/history")
+def chat_history_api():
+    """Get chat conversation history for a session."""
+    session_id = request.args.get("session_id", "panel")
+    try:
+        from core import conversation_store as _conv
+        messages = _conv.get_history(session_id, max_pairs=20)
+        return jsonify({"messages": messages, "session_id": session_id})
+    except Exception as e:
+        return jsonify({"messages": [], "error": str(e)})
 
 
 # ─── Diagnostics ──────────────────────────────────────

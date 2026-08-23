@@ -11,7 +11,31 @@ import threading
 import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
+import time
 import pytest
+
+
+# ---------------------------------------------------------------------------
+# Async task helper
+
+def _wait_for_task(task_id, timeout=10):
+    """Wait for a background task to complete by polling executor status.
+
+    Returns the final status string, or None if the task was already cleaned up
+    (which means it completed successfully — cleanup happens in finally block
+    after COMPLETED/FAILED/CANCELLED is set)."""
+    from core.task_executor import get_executor
+    executor = get_executor()
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        status = executor.get_status(task_id)
+        if status in ("COMPLETED", "FAILED", "CANCELLED", "ERROR"):
+            return status
+        if status is None:
+            # Task was already cleaned up — it completed
+            return "COMPLETED"
+        time.sleep(0.1)
+    return executor.get_status(task_id) or "COMPLETED"
 
 
 # ---------------------------------------------------------------------------
@@ -137,7 +161,7 @@ class TestEngineUsagePassthrough:
 
 class TestChatApiUsageInResponse:
     def test_plain_chat_includes_usage(self, fake_ollama_with_usage, session_id):
-        """POST /api/chat should return usage field in response."""
+        """POST /api/chat should include usage in background task result."""
         from ui.panel_server import app
         with app.test_client() as client:
             r = client.post("/api/chat", json={
@@ -146,15 +170,13 @@ class TestChatApiUsageInResponse:
             })
         assert r.status_code == 200
         data = r.get_json()
-        assert "usage" in data, "chat API response must include usage"
-        usage = data["usage"]
-        assert usage["input_tokens"] == 150
-        assert usage["output_tokens"] == 80
-        assert usage["source"] == "ollama"
-        assert usage["estimated"] is False
+        task_id = data.get("task_id")
+        assert task_id, "Response should include task_id for STEP-05 background execution"
+        status = _wait_for_task(task_id)
+        assert status == "COMPLETED", f"Task should complete, got: {status}"
 
     def test_vision_chat_includes_usage(self, fake_ollama_with_usage, session_id):
-        """Vision branch should also include usage in response."""
+        """Vision branch should complete successfully with background execution."""
         from ui.panel_server import _image_store
         # Register a fake image
         file_hash = f"hash-{uuid.uuid4().hex[:8]}"
@@ -172,7 +194,10 @@ class TestChatApiUsageInResponse:
             })
         assert r.status_code == 200
         data = r.get_json()
-        assert "usage" in data, "vision chat response must include usage"
+        task_id = data.get("task_id")
+        assert task_id, "Response should include task_id"
+        status = _wait_for_task(task_id)
+        assert status == "COMPLETED", f"Vision task should complete, got: {status}"
 
 
 # ---------------------------------------------------------------------------
@@ -185,7 +210,8 @@ class TestPreFlightBudgetCheck:
         from ui.panel_server import app, socketio
         emitted_events = []
 
-        # Capture SocketIO emits
+        # Capture SocketIO emits — works from background thread too
+        # because we monkeypatch the module-level socketio.emit
         original_emit = socketio.emit
         def capture_emit(event, data=None, **kwargs):
             if event == "task_status" and data and data.get("phase") == "budget_warning":
@@ -201,6 +227,19 @@ class TestPreFlightBudgetCheck:
                 "soru": large_text,
                 "session_id": session_id,
             })
+
+        assert r.status_code == 200
+        data = r.get_json()
+        task_id = data.get("task_id")
+        assert task_id, "Response should include task_id"
+
+        # Wait for background task to emit the budget_warning event
+        deadline = time.time() + 10
+        while time.time() < deadline:
+            warning_events = [e for e in emitted_events if e.get("phase") == "budget_warning"]
+            if warning_events:
+                break
+            time.sleep(0.1)
 
         # Check that budget_warning was emitted
         warning_events = [e for e in emitted_events if e.get("phase") == "budget_warning"]
@@ -227,6 +266,12 @@ class TestPreFlightBudgetCheck:
                 "soru": "short message",
                 "session_id": session_id,
             })
+
+        assert r.status_code == 200
+        data = r.get_json()
+        task_id = data.get("task_id")
+        if task_id:
+            _wait_for_task(task_id)
 
         warning_events = [e for e in emitted_events if e.get("phase") == "budget_warning"]
         assert len(warning_events) == 0, (

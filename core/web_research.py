@@ -964,18 +964,66 @@ def research_topic(
             "topic": task.topic,
             "status": "failed",
             "error": str(e),
+        }# ─── Hızlı Erişim Fonksiyonları ─────────────────────────────────────────────
+
+def fast_research(topic: str, max_results: int = 5) -> dict[str, Any]:
+    """Çok hızlı araştırma — sadece DuckDuckGo araması, browser kullanmaz.
+    
+    ~2-5 saniye sürer. Deep research yerine kullanılır.
+    Sonuçları basit metin olarak döndürür.
+    """
+    try:
+        from core.agent_tools import web_search as _ws
+        result = _ws(topic, max_results=max_results)
+        links = result.get("results", [])
+        
+        if not links:
+            return {
+                "topic": topic,
+                "status": "no_results",
+                "report_text": f"'{topic}' hakkında arama sonucu bulunamadı.",
+                "sources": [],
+                "findings_count": 0,
+            }
+        
+        # Basit rapor oluştur
+        report_lines = [f"Araştırma Konusu: {topic}", "", "Bulunan Kaynaklar:"]
+        sources = []
+        for i, link in enumerate(links, 1):
+            title = link.get("title", "")
+            url = link.get("href", "")
+            report_lines.append(f"{i}. {title}")
+            if url:
+                report_lines.append(f"   {url}")
+            sources.append({"title": title, "url": url})
+        
+        report_text = "\n".join(report_lines)
+        log(f"[WEB_RESEARCH] Hızlı araştırma tamamlandı: {len(links)} sonuç")
+        
+        return {
+            "topic": topic,
+            "status": "completed",
+            "report_text": report_text,
+            "sources": sources,
+            "findings_count": len(links),
+        }
+    except Exception as e:
+        log(f"[WEB_RESEARCH] Hızlı araştırma hatası: {e}")
+        return {
+            "topic": topic,
+            "status": "failed",
+            "report_text": f"Araştırma başarısız: {e}",
+            "sources": [],
+            "findings_count": 0,
         }
 
 
-# ─── Hızlı Erişim Fonksiyonları ─────────────────────────────────────────────
-
 def quick_research(topic: str) -> dict[str, Any]:
-    """Hızlı araştırma — max 5 kaynak."""
-    return research_topic(topic, max_sources=5, save_to_memory=False)
-
+    """Hızlı araştırma — fast_research kullanır (browser yok)."""
+    return fast_research(topic, max_results=5)
 
 def deep_research(topic: str) -> dict[str, Any]:
-    """Derin araştırma — max 15 kaynak, memory'ye kaydet."""
+    """Derin araştırma — max 15 kaynak, browser + memory."""
     return research_topic(topic, max_sources=15, save_to_memory=True)
 
 

@@ -16,16 +16,9 @@ from core.approval_manager import (
     get_pending_approval, get_approval_by_id, TaskStatus,
 )
 
-SYSTEM = """Sen UMAY'ın yerel yazılım mühendisi ajanısın. Türkçe çalış.
-Kullanıcı bir proje incelemesi istediğinde önce hedef workspace'i keşfet.
-Tahmin etme; dosya içeriğine, gerçek tool sonuçlarına ve test çıktısına dayan.
-Tool çağrısı yaparsan sonucunu bekle ve sonra devam et. Sadece tool çağrısını
-metin olarak yazıp görevi bitirme.
-Audit görevlerinde keşif → dosya okuma → arama → test/lint/build → bulgular
-sırasını takip et. Kullanıcı açıkça düzeltme yetkisi verdiyse write_file ve
-run_command kullanabilirsin. Yıkıcı komutlar yasaktır.
-Görev sonunda somut bulgular ve yapılan işlemleri özetle.
-"""
+# identity.py'den merkezi UMAY kimlik sistemi import ediliyor.
+# Artık agent.py'de hardcoded prompt yok — tum identity identity.py'den gelir.
+from core.identity import UMAY_SYSTEM, CHAT_IDENTITY
 
 AUDIT_DIR = PROJECT_ROOT / "logs"
 AUDIT_FILE = AUDIT_DIR / "DEVELOPMENT_LOG.md"
@@ -178,7 +171,7 @@ def run_agent(
 ) -> str:
     routed_task = "coding"
     routed_model = None
-    if context and context.get("channel") == "telegram" and not context.get("resume"):
+    if context and context.get("channel") in ("telegram", "telegram_user") and not context.get("resume"):
         from core.router import model_sec
         routed_model, routed_task = model_sec(request)
     model = routed_model or resolve_model(routed_task) or resolve_model("coding") or resolve_model("chat")
@@ -225,13 +218,74 @@ def run_agent(
         f"- UMAY kökü: `{PROJECT_ROOT}`\n- Aktif workspace: `{active}`\n- Model: `{model}`\n- İstek: {request}",
     )
 
-    context_text = ""
-    if context:
-        context_text = "\nTelegram context: " + json.dumps(context, ensure_ascii=False)
-    messages = [
-        {"role": "system", "content": SYSTEM + f"\nAktif workspace: {active}" + context_text},
-        {"role": "user", "content": request},
-    ]
+    # ─── FAZ 2: Intent Router Integration ──────────────────────────────────
+    is_chat = context and context.get("channel") in ("telegram", "telegram_user")
+    
+    # Intent sınıflandırması
+    try:
+        from core.intent_router import classify_intent, get_available_tools as intent_tools, Intent
+        intent = classify_intent(request)
+    except ImportError:
+        intent = Intent.CHAT if is_chat else None
+    
+    # Intent'e göre system prompt seçimi
+    if is_chat:
+        if intent in (Intent.CHAT, Intent.KNOWLEDGE):
+            system_prompt = CHAT_IDENTITY
+        else:
+            # ACTION/TIME/FILE/DOCUMENT/VISION/WEB/CODE/TERMINAL/COMPLEX
+            system_prompt = UMAY_SYSTEM + f"\n\nAktif workspace: {active}"
+    else:
+        system_prompt = UMAY_SYSTEM + f"\n\nAktif workspace: {active}"
+    
+    # Intent'e göre tool seçimi
+    intent_tools_list = None
+    if is_chat:
+        try:
+            intent_tools_list = intent_tools(intent)  # None = tool kullanma
+        except Exception:
+            intent_tools_list = None
+    
+    # Intent'e göre model/ task seçimi (sadece telegram/chat kanalında)
+    if is_chat and not routed_model:
+        from core.router import model_sec
+        routed_model_new, routed_task_new = model_sec(request)
+        if intent_tools_list is not None:
+            # Tool kullanılacaksa tool-capable model seç
+            routed_model = routed_model_new
+            routed_task = routed_task_new
+        else:
+            # Basit sohbet → chat model
+            routed_task = "chat"
+            routed_model = resolve_model("chat")
+
+    # Conversation history (Telegram/session bazlı)
+    history_messages = []
+    if is_chat and context and context.get("session_id"):
+        try:
+            from core import conversation_store as _conv
+            session_id = context["session_id"]
+            raw_history = _conv.get_history(session_id, limit=10)
+            for h in raw_history:
+                role = h.get("role", "user")
+                content = h.get("content", "")
+                if content and role in ("user", "assistant"):
+                    history_messages.append({"role": role, "content": content})
+        except Exception:
+            pass
+
+    messages = [{"role": "system", "content": system_prompt}]
+    messages.extend(history_messages)
+    messages.append({"role": "user", "content": request})
+
+    # Kaydet: kullanıcının mesajını conversation store'a
+    if is_chat and context and context.get("session_id"):
+        try:
+            from core import conversation_store as _conv
+            _conv.add_message(context["session_id"], "user", request)
+        except Exception:
+            pass
+
     if resume and previous and isinstance(previous.get("messages"), list) and previous.get("messages"):
         messages = previous["messages"]
     if (
@@ -246,9 +300,14 @@ def run_agent(
 
     try:
         for step in range(max_steps):
+            # FAZ 2: Intent-based tool selection
+            if is_chat:
+                use_tools = intent_tools_list  # None for CHAT/KNOWLEDGE, tool list for ACTION etc.
+            else:
+                use_tools = TOOLS
             result = chat(
                 messages, model=model, ajan="umay_agent",
-                task=routed_task, tools=TOOLS
+                task=routed_task, tools=use_tools
             )
             msg = result.get("message", {}) if isinstance(result, dict) else {}
             tool_calls = _parse_tool_calls(msg)
@@ -289,10 +348,10 @@ def run_agent(
                             risk=risk,
                             messages=messages,
                         )
-                        if context and context.get("channel") == "telegram":
+                        if context and context.get("channel") in ("telegram", "telegram_user"):
                             from core.communication_manager import get_communication_manager
                             get_communication_manager().send_approval_required(
-                                channel="telegram",
+                                channel=context["channel"],
                                 task_id=task_id,
                                 approval_id=apr.id,
                                 tool_name=tc_name,
@@ -329,6 +388,13 @@ def run_agent(
                 "Agent görevi tamamlandı",
                 f"- Task ID: `{task_id}`\n- Adım: {step + 1}\n- Workspace: `{active}`\n- Sonuç:\n{answer[:4000]}",
             )
+            # Telegram cevabını conversation store'a kaydet
+            if is_chat and context and context.get("session_id"):
+                try:
+                    from core import conversation_store as _conv
+                    _conv.add_message(context["session_id"], "assistant", answer)
+                except Exception:
+                    pass
             return answer
 
         raise RuntimeError(f"Agent adım limiti doldu ({max_steps}).")

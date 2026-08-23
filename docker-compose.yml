@@ -23,10 +23,14 @@ services:
       # Persistent data
       - umay-memory:/app/memory/chroma
       - umay-chroma:/app/rag/chroma
-      - umay-telegram-session:/run/umay/telegram
+      - ./telegram_user_sessions:/run/umay/telegram
       - ./logs:/app/logs
       # Knowledge base (read-only)
       - ./knowledge:/app/knowledge:ro
+      # Windows host user folders (read-only for security)
+      - ${USERPROFILE:-C:\Users\Default}/Desktop:/host/Desktop:ro
+      - ${USERPROFILE:-C:\Users\Default}/Documents:/host/Documents:ro
+      - ${USERPROFILE:-C:\Users\Default}/Downloads:/host/Downloads:ro
     environment:
       # Ollama — host.docker.internal üzerinden host'a erişim
       - OLLAMA_URL=http://host.docker.internal:11434

@@ -197,3 +197,43 @@ failures. 466 = 461 (STEP-03 end state) + 5 (new mixed-attachment tests).
 
 Per explicit instruction: **stopping here.** Not proceeding to STEP-04.1
 or any other STEP-04 subtask without approval.
+
+## STEP-05 — Background Task Execution
+Date: 2026-08-22
+Status: **COMPLETE**
+
+Problem: `chat_api()` was synchronous — the HTTP request blocked until the
+model call completed. For long-running tasks (tool calling, multi-step
+agent work), this caused the frontend to hang. No pause/resume/cancel
+support existed.
+
+Approach: Instead of rewriting the chat logic, `execute_chat_task()` was
+created as a function that wraps the EXISTING STEP-04 synchronous chat
+code (vision routing, tool calling, token budget, context compression,
+failure recovery) and runs it inside a `TaskExecutor` background thread.
+Cooperative `check_cancel()` and `check_pause()` checkpoints were added
+before each model call.
+
+Files changed:
+- `ui/panel_server.py`: Reverted broken uncommitted changes, added
+  `execute_chat_task()`, SocketIO callbacks, task management endpoints
+- `core/task_executor.py`: Fixed `_wrapper` (missing `_finish()` on success),
+  default executor (added `check_cancel()` calls), pause/resume fixes
+- `tests/test_mixed_attachment_fix.py`: Updated for async (wait for task)
+- `tests/test_token_budget_integration.py`: Updated for async
+- `tests/test_step05_task_executor.py`: Updated endpoint format
+
+Critical bugs fixed during implementation:
+1. panel_server.py regression — uncommitted changes deleted working code
+2. task_executor._wrapper missing _finish() — task stayed RUNNING forever
+3. check_cancel() dead code — cancel requests were silently ignored
+
+Verification:
+- Full suite: **551 passed, 0 failed** (zero regressions)
+- Docker: rebuilt, container healthy on port 5001
+- Health check: OK
+- Chat API: returns task_id + status (async)
+- Task detail: returns task info from executor or JSONL fallback
+- Diagnostics: 8/10 PASS (Telegram/Gmail not configured — expected)
+
+Next: Telegram enhancement or STEP-06/07 (checkpoint/recovery).

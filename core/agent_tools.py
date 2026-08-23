@@ -60,6 +60,9 @@ def get_workspace() -> Path:
 def _safe_path(path: str) -> Path:
     raw = Path(path)
     target = (ACTIVE_WORKSPACE / raw).resolve() if not raw.is_absolute() else raw.resolve()
+    # Allow /host/* paths (Windows host filesystem mounts)
+    if str(target).startswith("/host/"):
+        return target
     if target != ACTIVE_WORKSPACE and ACTIVE_WORKSPACE not in target.parents:
         raise PermissionError(f"Workspace dışına erişim yasak: {target}")
     return target
@@ -81,7 +84,11 @@ def list_directory(path: str = ".", recursive: bool = False) -> dict[str, Any]:
         if _skip(item):
             continue
         try:
-            rel = str(item.relative_to(ACTIVE_WORKSPACE))
+            # Handle /host/* paths (Windows host filesystem mounts)
+            if str(target).startswith("/host/"):
+                rel = str(item.relative_to(target))
+            else:
+                rel = str(item.relative_to(ACTIVE_WORKSPACE))
             entries.append({
                 "path": rel,
                 "type": "dir" if item.is_dir() else "file",
@@ -364,6 +371,222 @@ def browser_close() -> dict[str, Any]:
     return {"status": "PASS", "message": "Browser kapatıldı."}
 
 
+# ─── Dosya/Klasör/URL Açma Tool'ları ─────────────────────────────────────
+
+def open_file(path: str) -> dict[str, Any]:
+    """Bir dosyayı varsayılan uygulama ile aç."""
+    from core.terminal_agent import open_file as _open_file
+    return _open_file(path)
+
+
+def open_folder(path: str = ".") -> dict[str, Any]:
+    """Klasörü dosya yöneticisinde aç."""
+    from core.terminal_agent import open_folder as _open_folder
+    return _open_folder(path)
+
+
+def open_url(url: str) -> dict[str, Any]:
+    """URL'yi varsayılan tarayıcıda aç."""
+    from core.terminal_agent import open_url as _open_url
+    return _open_url(url)
+
+
+def open_with_app(app_name: str, path: str) -> dict[str, Any]:
+    """Belirli bir uygulama ile dosya aç."""
+    from core.terminal_agent import open_with_app as _open_with
+    return _open_with(app_name, path)
+
+
+# ─── System Clock / Date Tools ────────────────────────────────────────────────
+
+import platform
+import subprocess
+
+
+def get_current_time(timezone: str = "Europe/Istanbul") -> dict[str, Any]:
+    """Sistemin gerçek saatini döndür. Ollama/LLM tarafından uydurulmaz."""
+    from datetime import datetime, timezone as tz, timedelta
+    try:
+        now = datetime.now()
+        return {
+            "time": now.strftime("%H:%M:%S"),
+            "datetime": now.strftime("%Y-%m-%d %H:%M:%S"),
+            "timezone": timezone,
+            "hour": now.hour,
+            "minute": now.minute,
+            "second": now.second,
+        }
+    except Exception as exc:
+        return {"error": str(exc)}
+
+
+def get_current_date() -> dict[str, Any]:
+    """Sistemin gerçek tarihini döndür."""
+    from datetime import datetime
+    try:
+        now = datetime.now()
+        day_names_tr = ["Pazartesi", "Salı", "Çarşamba", "Perşembe", "Cuma", "Cumartesi", "Pazar"]
+        month_names_tr = ["", "Ocak", "Şubat", "Mart", "Nisan", "Mayıs", "Haziran",
+                         "Temmuz", "Ağustos", "Eylül", "Ekim", "Kasım", "Aralık"]
+        return {
+            "date": now.strftime("%Y-%m-%d"),
+            "day_of_week": day_names_tr[now.weekday()],
+            "day": now.day,
+            "month": now.month,
+            "month_name": month_names_tr[now.month],
+            "year": now.year,
+            "formatted": f"{day_names_tr[now.weekday()]}, {now.day} {month_names_tr[now.month]} {now.year}",
+        }
+    except Exception as exc:
+        return {"error": str(exc)}
+
+
+def get_system_info() -> dict[str, Any]:
+    """Sistem bilgisi toplar."""
+    try:
+        import psutil
+        disk = psutil.disk_usage('/')
+        mem = psutil.virtual_memory()
+        return {
+            "os": platform.system(),
+            "os_version": platform.version(),
+            "python": platform.python_version(),
+            "hostname": platform.node(),
+            "disk_total_gb": round(disk.total / (1024**3), 1),
+            "disk_used_gb": round(disk.used / (1024**3), 1),
+            "disk_percent": disk.percent,
+            "memory_total_gb": round(mem.total / (1024**3), 1),
+            "memory_percent": mem.percent,
+        }
+    except ImportError:
+        return {
+            "os": platform.system(),
+            "os_version": platform.version(),
+            "python": platform.python_version(),
+            "hostname": platform.node(),
+        }
+
+
+def list_processes() -> dict[str, Any]:
+    """Çalışan process'leri listeler."""
+    try:
+        import psutil
+        procs = []
+        for p in psutil.process_iter(['pid', 'name', 'cpu_percent', 'memory_percent']):
+            try:
+                info = p.info
+                procs.append({
+                    'pid': info['pid'],
+                    'name': info['name'],
+                    'cpu': round(info.get('cpu_percent', 0) or 0, 1),
+                    'memory': round(info.get('memory_percent', 0) or 0, 1),
+                })
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                pass
+        procs.sort(key=lambda x: x.get('cpu', 0), reverse=True)
+        return {"processes": procs[:50], "count": len(procs)}
+    except ImportError:
+        result = subprocess.run(['tasklist', '/FO', 'CSV'], capture_output=True, text=True, timeout=10)
+        return {"raw": result.stdout[:5000], "note": "psutil kurulu değil"}
+
+
+def find_process(name: str) -> dict[str, Any]:
+    """Belirli bir processi bulur."""
+    try:
+        import psutil
+        found = []
+        for p in psutil.process_iter(['pid', 'name', 'cmdline']):
+            try:
+                if name.lower() in (p.info['name'] or '').lower():
+                    found.append({
+                        'pid': p.info['pid'],
+                        'name': p.info['name'],
+                        'cmdline': ' '.join(p.info.get('cmdline') or [])[:200],
+                    })
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                pass
+        return {"matches": found, "count": len(found)}
+    except ImportError:
+        result = subprocess.run(['tasklist', '/FI', f'IMAGENAME eq {name}*'], capture_output=True, text=True, timeout=10)
+        return {"raw": result.stdout[:3000]}
+
+
+# ─── Calculator Tool ─────────────────────────────────────────────────────────
+
+import ast as _ast
+import operator as _op
+
+_SAFE_OPS = {
+    _ast.Add: _op.add, _ast.Sub: _op.sub, _ast.Mult: _op.mul,
+    _ast.Div: _op.truediv, _ast.Mod: _op.mod, _ast.Pow: _op.pow,
+    _ast.USub: _op.neg, _ast.UAdd: _op.pos,
+}
+
+
+def evaluate_expression(expression: str) -> dict[str, Any]:
+    """Matematiksel ifadeyi güvenli şekilde değerlendir. LLM kullanmadan doğrudan hesapla."""
+    try:
+        # Temizleme
+        expr = expression.strip()
+        # Türkçe karakterleri temizle
+        expr = expr.replace('×', '*').replace('÷', '/').replace('x', '*').replace('X', '*')
+        # '=' işaretini kaldır
+        if expr.endswith('='):
+            expr = expr[:-1].strip()
+        # Güvenli AST evaluation
+        tree = _ast.parse(expr, mode='eval')
+        result = _eval_node(tree.body)
+        return {
+            "expression": expression,
+            "result": result,
+            "formatted": f"{expression} = {result}",
+        }
+    except ZeroDivisionError:
+        return {"error": "Sıfıra bölemezsin", "expression": expression}
+    except Exception as exc:
+        return {"error": f"Hesaplama hatası: {exc}", "expression": expression}
+
+
+def _eval_node(node: _ast.AST) -> float:
+    """AST node'unu güvenli şekilde değerlendir."""
+    if isinstance(node, _ast.Num):
+        return node.n
+    elif isinstance(node, _ast.Constant) and isinstance(node.value, (int, float)):
+        return node.value
+    elif isinstance(node, _ast.BinOp):
+        op = _SAFE_OPS.get(type(node.op))
+        if op is None:
+            raise ValueError(f"Desteklenmeyen operatör: {type(node.op).__name__}")
+        return op(_eval_node(node.left), _eval_node(node.right))
+    elif isinstance(node, _ast.UnaryOp):
+        op = _SAFE_OPS.get(type(node.op))
+        if op is None:
+            raise ValueError(f"Desteklenmeyen operatör: {type(node.op).__name__}")
+        return op(_eval_node(node.operand))
+    else:
+        raise ValueError(f"Desteklenmeyen ifade tipi: {type(node).__name__}")
+
+
+# ─── Time Tool Definitions ────────────────────────────────────────────────────
+TIME_TOOLS = [
+    {"type": "function", "function": {
+        "name": "get_current_time",
+        "description": "Sistemin gerçek saatini döndürür. Ollama/LLM tarafından uydurulmaz, gerçek sistem saati kullanılır.",
+        "parameters": {"type": "object", "properties": {
+            "timezone": {"type": "string", "description": "Saat dilimi (varsayılan: Europe/Istanbul)"}
+        }, "required": []}}},
+    {"type": "function", "function": {
+        "name": "get_current_date",
+        "description": "Sistemin gerçek tarihini ve gününü döndürür.",
+        "parameters": {"type": "object", "properties": {}, "required": []}}},
+    {"type": "function", "function": {
+        "name": "evaluate_expression",
+        "description": "Matematiksel ifadeyi hesaplar (toplama, çıkarma, çarpma, bölme, üs alma). LLM kullanmadan doğrudan sonucu üretir.",
+        "parameters": {"type": "object", "properties": {
+            "expression": {"type": "string", "description": "Hesaplanacak matematiksel ifade (ör: '9/1*2-3+4')"}
+        }, "required": ["expression"]}}},
+]
+
 TOOLS = [
     {"type": "function", "function": {
         "name": "list_directory",
@@ -402,6 +625,10 @@ TOOLS = [
     {"type": "function", "function": {"name": "browser_type", "description": "Web sayfasındaki alana veri yazar; açık kullanıcı onayı gerekir.", "parameters": {"type":"object","properties":{"selector":{"type":"string"},"text":{"type":"string"}},"required":["selector","text"]}}},
     {"type": "function", "function": {"name": "browser_screenshot", "description": "Mevcut sayfanın ekran görüntüsünü alır.", "parameters": {"type":"object","properties":{},"required":[]}}},
     {"type": "function", "function": {"name": "browser_close", "description": "Açık browser oturumunu kapatır.", "parameters": {"type":"object","properties":{},"required":[]}}},
+    {"type": "function", "function": {"name": "open_file", "description": "Bir dosyayı varsayılan uygulama ile açar (PDF, resim, video, belge vb.).", "parameters": {"type":"object","properties":{"path":{"type":"string"}},"required":["path"]}}},
+    {"type": "function", "function": {"name": "open_folder", "description": "Klasörü dosya yöneticisinde açar.", "parameters": {"type":"object","properties":{"path":{"type":"string"}},"required":[]}}},
+    {"type": "function", "function": {"name": "open_url", "description": "URL'yi varsayılan tarayıcıda açar.", "parameters": {"type":"object","properties":{"url":{"type":"string"}},"required":["url"]}}},
+    {"type": "function", "function": {"name": "open_with_app", "description": "Belirli bir uygulama ile dosya açar (notepad, code, calc vb.).", "parameters": {"type":"object","properties":{"app_name":{"type":"string"},"path":{"type":"string"}},"required":["app_name","path"]}}},
     {"type": "function", "function": {
         "name": "run_command",
         "description": "Aktif workspace kökünde test/lint/build/git gibi komutları çalıştırır.",
@@ -443,6 +670,9 @@ TOOLS = [
             "source": {"type": "string"}
         }, "required": ["path"]}}},
 ]
+
+# Time tool'ları TOOLS listesine ekle
+TOOLS.extend(TIME_TOOLS)
 
 # Document Reader import'u (opsiyonel)
 try:
@@ -1080,6 +1310,8 @@ DISPATCH = {
     "web_search": web_search, "browser_open": browser_open, "browser_read": browser_read,
     "browser_click": browser_click, "browser_type": browser_type,
     "browser_screenshot": browser_screenshot, "browser_close": browser_close,
+    "open_file": open_file, "open_folder": open_folder,
+    "open_url": open_url, "open_with_app": open_with_app,
     "read_document": read_document, "scan_directory": scan_directory,
     "search_in_documents": search_in_documents, "document_to_memory": document_to_memory,
     "analyze_image": analyze_image, "image_to_text": image_to_text,
@@ -1101,4 +1333,6 @@ DISPATCH = {
     "gmail_get_email": _gmail_get_email, "gmail_list_attachments": _gmail_list_attachments,
     "gmail_summarize": _gmail_summarize, "gmail_draft_reply": _gmail_draft_reply,
     "gmail_folder_info": _gmail_folder_info, "gmail_send_email": _gmail_send_email,
+    "evaluate_expression": evaluate_expression,
+    "get_current_time": get_current_time, "get_current_date": get_current_date,
 }

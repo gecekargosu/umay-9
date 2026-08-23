@@ -43,11 +43,15 @@ logs/
 
 # Freebuff internal
 .freebuff/
+.freebuff*
 
 # Pycache (catch-all)
 __pycache__/
 
 # Temp files
+tests/_*.py
+tests/_*.txt
+tests/_*.b64
 temp/
 
 # Build artifacts

@@ -650,6 +650,98 @@ def find_process(name: str) -> dict[str, Any]:
     return _agent.process_manager.find_process(name)
 
 
+# ─── Dosya/Klasör Açma Fonksiyonları ─────────────────────────────────────
+
+def open_file(path: str) -> dict[str, Any]:
+    """Bir dosyayı varsayılan uygulama ile aç (Windows: start, Linux: xdg-open)."""
+    import subprocess
+    import platform
+    from pathlib import Path
+
+    p = Path(path)
+    if not p.exists():
+        return {"status": "ERROR", "error": f"Dosya bulunamadı: {path}"}
+
+    try:
+        system = platform.system()
+        if system == "Windows":
+            os.startfile(str(p.resolve()))
+        elif system == "Darwin":
+            subprocess.Popen(["open", str(p.resolve())])
+        else:
+            subprocess.Popen(["xdg-open", str(p.resolve())])
+        return {"status": "OK", "message": f"Dosya açıldı: {p.name}", "path": str(p.resolve())}
+    except Exception as e:
+        return {"status": "ERROR", "error": f"Dosya açılamadı: {e}"}
+
+
+def open_folder(path: str = ".") -> dict[str, Any]:
+    """Klasörü dosya yöneticisinde aç."""
+    import subprocess
+    import platform
+    from pathlib import Path
+
+    p = Path(path)
+    if not p.exists():
+        return {"status": "ERROR", "error": f"Klasör bulunamadı: {path}"}
+    if not p.is_dir():
+        p = p.parent
+
+    try:
+        system = platform.system()
+        if system == "Windows":
+            subprocess.Popen(["explorer", str(p.resolve())])
+        elif system == "Darwin":
+            subprocess.Popen(["open", str(p.resolve())])
+        else:
+            subprocess.Popen(["xdg-open", str(p.resolve())])
+        return {"status": "OK", "message": f"Klasör açıldı: {p.resolve()}", "path": str(p.resolve())}
+    except Exception as e:
+        return {"status": "ERROR", "error": f"Klasör açılamadı: {e}"}
+
+
+def open_url(url: str) -> dict[str, Any]:
+    """URL'yi varsayılan tarayıcıda aç."""
+    import subprocess
+    import platform
+
+    if not url.startswith(("http://", "https://")):
+        url = "https://" + url
+
+    try:
+        system = platform.system()
+        if system == "Windows":
+            subprocess.Popen(["start", url], shell=True)
+        elif system == "Darwin":
+            subprocess.Popen(["open", url])
+        else:
+            subprocess.Popen(["xdg-open", url])
+        return {"status": "OK", "message": f"URL açıldı: {url}"}
+    except Exception as e:
+        return {"status": "ERROR", "error": f"URL açılamadı: {e}"}
+
+
+def open_with_app(app_name: str, path: str) -> dict[str, Any]:
+    """Belirli bir uygulama ile dosya aç (örn: notepad, code, calc)."""
+    import subprocess
+    import platform
+    from pathlib import Path
+
+    p = Path(path)
+    if not p.exists():
+        return {"status": "ERROR", "error": f"Dosya bulunamadı: {path}"}
+
+    try:
+        system = platform.system()
+        if system == "Windows":
+            subprocess.Popen([app_name, str(p.resolve())])
+        else:
+            subprocess.Popen([app_name, str(p.resolve())])
+        return {"status": "OK", "message": f"{app_name} ile açıldı: {p.name}", "path": str(p.resolve())}
+    except Exception as e:
+        return {"status": "ERROR", "error": f"Açılamadı: {e}"}
+
+
 # ─── Test Fonksiyonu ────────────────────────────────────────────────────────
 
 if __name__ == "__main__":

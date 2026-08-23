@@ -23,7 +23,7 @@ SESSION_PATH = Path(os.getenv("TELEGRAM_USER_SESSION_PATH", "telegram_user_sessi
 if not SESSION_PATH.is_absolute():
     SESSION_PATH = ROOT / SESSION_PATH
 MAX_FILE_BYTES = int(os.getenv("TELEGRAM_MAX_FILE_BYTES", "20000000"))
-ACCEPT_OUTGOING = os.getenv("TELEGRAM_USER_ACCEPT_OUTGOING", "false").lower() == "true"
+ACCEPT_OUTGOING = os.getenv("TELEGRAM_USER_ACCEPT_OUTGOING", "true").lower() == "true"
 DOCUMENT_EXTENSIONS = {
     ".pdf", ".docx", ".xlsx", ".csv", ".txt", ".md", ".json", ".xml", ".html",
     ".py", ".js", ".ts", ".css", ".yaml", ".yml", ".toml", ".ini", ".log",
@@ -59,6 +59,7 @@ class TelegramUserAdapter:
         self._ready = threading.Event()
         self._error = None
         self._agent_lock = threading.RLock()
+        self._outgoing_msg_ids: set[int] = set()
 
     @classmethod
     def is_configured(cls) -> bool:
@@ -113,16 +114,21 @@ class TelegramUserAdapter:
 
     def _run_thread(self):
         from telethon import TelegramClient, events
-
+        log("[TELEGRAM_USER] Thread started — creating event loop")
         self._loop = asyncio.new_event_loop()
         asyncio.set_event_loop(self._loop)
         try:
             self._client = TelegramClient(str(self.session_path), self.api_id, self.api_hash)
+            log("[TELEGRAM_USER] TelegramClient created, connecting...")
             self._loop.run_until_complete(self._connect(events))
             if not self._ready.is_set():
+                log("[TELEGRAM_USER] _ready not set after _connect — thread exiting")
                 return
+            log("[TELEGRAM_USER] Entering run_until_disconnected...")
             self._loop.run_until_complete(self._client.run_until_disconnected())
+            log("[TELEGRAM_USER] Client disconnected — thread exiting")
         except Exception as exc:
+            log(f"[TELEGRAM_USER][ERROR] Thread exception: {type(exc).__name__}: {exc}")
             self._error = type(exc).__name__
             self._running = False
             self._ready.set()
@@ -131,19 +137,26 @@ class TelegramUserAdapter:
             if self._client and not self._client.is_connected():
                 self._client = None
             self._loop.close()
+            log("[TELEGRAM_USER] Thread finished — loop closed")
 
     async def _connect(self, events):
+        log("[TELEGRAM_USER] Connecting to Telegram...")
         await self._client.connect()
         if not await self._client.is_user_authorized():
             log("[TELEGRAM_USER] Session yetkili değil; login bootstrap çalıştırılmalı.")
             await self._client.disconnect()
             self._ready.set()
             return
-        self._client.add_event_handler(self._handle_event, events.NewMessage(incoming=not ACCEPT_OUTGOING))
-        await self._client.get_me()
+        me = await self._client.get_me()
+        log(f"[TELEGRAM_USER] Logged in as: {me.first_name} (@{me.username}) ID={me.id}")
+        # incoming=None: hem incoming hem outgoing mesajları dinle.
+        # Self-message kontrolü _handle_event içinde yapılıyor (sonsuz döngü engeli).
+        self._client.add_event_handler(self._handle_event, events.NewMessage())
+        handlers = self._client.list_event_handlers()
+        log(f"[TELEGRAM_USER] Event handlers registered: {len(handlers)}")
         self._running = True
         self._ready.set()
-        log("[TELEGRAM_USER] User account client bağlandı.")
+        log("[TELEGRAM_USER] User account client bağlandı — ready.")
 
     def stop(self):
         self._running = False
@@ -157,12 +170,20 @@ class TelegramUserAdapter:
             self._thread.join(timeout=15)
 
     async def _handle_event(self, event):
+        log("[TELEGRAM_USER] EVENT_RECEIVED: message_id=" + str(event.message.id))
         sender_id = event.sender_id
         chat_id = event.chat_id
         if not self._authorized(sender_id, chat_id):
+            log(f"[TELEGRAM_USER] UNAUTHORIZED: sender={sender_id} chat={chat_id}")
             return
         message = event.message
+        # Self-message check: UMAY'nin kendi gonderdigi mesajlari isleme (sonsuz dongu engeli)
+        if message.id in self._outgoing_msg_ids:
+            self._outgoing_msg_ids.discard(message.id)
+            log(f"[TELEGRAM_USER] SELF_MESSAGE_SKIP: msg_id={message.id}")
+            return
         text = event.raw_text or ""
+        log(f"[TELEGRAM_USER] MESSAGE_RECEIVED: sender={sender_id} text={text[:100]}")
         context = {
             "channel": "telegram_user",
             "session_id": f"telegram_user:{chat_id}",
@@ -202,12 +223,20 @@ class TelegramUserAdapter:
         )
 
     def _handle_text_inbound(self, message):
+        log(f"[TELEGRAM_USER] ROUTING_TO_UMAY: text={message.text[:80]}")
         agent = self._agent_module
         if agent is None:
+            log("[TELEGRAM_USER] ERROR: agent module not set")
             from core import agent
             agent = agent
-        with self._agent_lock:
-            return agent.run_agent(message.text, context=message.context)
+        try:
+            with self._agent_lock:
+                result = agent.run_agent(message.text, context=message.context)
+            log(f"[TELEGRAM_USER] UMAY_RESPONSE: {str(result)[:100]}")
+            return result
+        except Exception as e:
+            log(f"[TELEGRAM_USER][ERROR] Agent failed: {e}")
+            return f"Agent hatası: {e}"
 
     async def _handle_approval_command(self, chat_id: int, user_id: int, text: str):
         parts = text.strip().split()
@@ -308,8 +337,13 @@ class TelegramUserAdapter:
             log(f"[TELEGRAM_USER] Outbound hata: {type(exc).__name__}")
 
     async def _send_text(self, chat_id: int, text: str):
+        log(f"[TELEGRAM_USER] RESPONSE_SENDING: chat={chat_id} len={len(str(text))}")
         for index in range(0, len(str(text)) or 1, 4000):
-            await self._client.send_message(chat_id, str(text)[index:index + 4000])
+            chunk = str(text)[index:index + 4000]
+            msg = await self._client.send_message(chat_id, chunk)
+            if msg and hasattr(msg, 'id'):
+                self._outgoing_msg_ids.add(msg.id)
+        log(f"[TELEGRAM_USER] RESPONSE_SENT: chat={chat_id}")
 
 
 _user_adapter: TelegramUserAdapter | None = None

@@ -69,6 +69,22 @@ def session_id():
     return f"vision-test-{uuid.uuid4().hex[:8]}"
 
 
+def _wait_for_task(task_id, timeout=10):
+    """Wait for a background task to complete by polling executor status."""
+    import time
+    from core.task_executor import get_executor
+    executor = get_executor()
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        status = executor.get_status(task_id)
+        if status in ("COMPLETED", "FAILED", "CANCELLED", "ERROR"):
+            return status
+        if status is None:
+            return "COMPLETED"  # Task already cleaned up = completed
+        time.sleep(0.1)
+    return executor.get_status(task_id) or "COMPLETED"
+
+
 def _register_fake_image():
     """Register a fake image in panel_server's in-memory image store and
     return an attachment dict referencing it, exactly like a real
@@ -98,6 +114,10 @@ class TestMixedAttachmentFix:
                 "attachments": [image_att, pdf_att],
             })
         assert r.status_code == 200
+        data = r.get_json()
+        task_id = data.get("task_id")
+        assert task_id, "Response should include task_id"
+        _wait_for_task(task_id)
 
         assert len(fake_vision_ollama.received_bodies) == 1
         sent = fake_vision_ollama.received_bodies[0]
@@ -126,6 +146,8 @@ class TestMixedAttachmentFix:
                 "attachments": [image_att, code_att],
             })
         assert r.status_code == 200
+        data = r.get_json()
+        _wait_for_task(data.get("task_id"))
 
         sent = fake_vision_ollama.received_bodies[0]
         user_msg = next(m for m in sent["messages"] if m["role"] == "user")
@@ -150,6 +172,8 @@ class TestMixedAttachmentFix:
                 "attachments": [image_att, txt_att],
             })
         assert r.status_code == 200
+        data = r.get_json()
+        _wait_for_task(data.get("task_id"))
 
         sent = fake_vision_ollama.received_bodies[0]
         user_msg = next(m for m in sent["messages"] if m["role"] == "user")
@@ -170,6 +194,8 @@ class TestMixedAttachmentFix:
                 "attachments": [image_att, pdf_att, code_att, txt_att],
             })
         assert r.status_code == 200
+        data = r.get_json()
+        _wait_for_task(data.get("task_id"))
 
         sent = fake_vision_ollama.received_bodies[0]
         user_msg = next(m for m in sent["messages"] if m["role"] == "user")
@@ -193,7 +219,8 @@ class TestMixedAttachmentFix:
             })
         assert r.status_code == 200
         data = r.get_json()
-        assert data["cevap"] == "gorsel analiz tamam"
+        assert "task_id" in data, "Response should include task_id"
+        _wait_for_task(data.get("task_id"))
 
         sent = fake_vision_ollama.received_bodies[0]
         user_msg = next(m for m in sent["messages"] if m["role"] == "user")

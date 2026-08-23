@@ -154,3 +154,35 @@ def list_tasks(limit: int = 20) -> list[dict[str, Any]]:
             if task_id:
                 latest[task_id] = event
     return list(latest.values())[-max(1, int(limit)):]
+
+
+
+def list_tasks_for_workspace(workspace: str, limit: int = 20) -> list[dict[str, Any]]:
+    """Workspace'e gore task listesi - STEP-05 / STEP-03 absorption."""
+    if not TASK_LOG.exists():
+        return []
+    latest: dict[str, dict[str, Any]] = {}
+    with TASK_LOG.open("r", encoding="utf-8", errors="replace") as f:
+        for line in f:
+            try:
+                event = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            task_id = event.get("task_id")
+            if task_id:
+                latest[task_id] = event
+    filtered = [
+        t for t in latest.values()
+        if t.get("workspace") == workspace
+    ]
+    return filtered[-max(1, int(limit)):]
+
+
+def update_status(task_id: str, status: str) -> bool:
+    """Update task status - STEP-05 lifecycle."""
+    _append({
+        "event": "status_update",
+        "task_id": task_id,
+        "status": status,
+    })
+    return True

@@ -493,6 +493,25 @@ def execute_chat_task(task_id, session_id, soru, attachments, *, on_status=None,
 
     t_start = time.time()
 
+    # ── TOOL EXECUTION LOGGING ─────────────────────────────────────────
+    def _tool_trace(tool_name, tool_input, tool_result, tool_error, duration_ms):
+        """Structured log for every tool call."""
+        import json as _j
+        trace = {
+            "ts": time.strftime("%Y-%m-%dT%H:%M:%S"),
+            "task_id": task_id,
+            "session_id": session_id,
+            "intent": _intent.value if _intent else None,
+            "mode": mode,
+            "tool": tool_name,
+            "input": str(tool_input)[:300],
+            "status": "ERROR" if tool_error else "OK",
+            "error": str(tool_error)[:200] if tool_error else None,
+            "duration_ms": round(duration_ms),
+            "result_preview": str(tool_result)[:300] if tool_result else None,
+        }
+        log(f"[TOOL_TRACE] {_j.dumps(trace, ensure_ascii=False)}")
+
     if on_status:
         on_status(task_id, "thinking", "Düşüniyor...")
 
@@ -572,9 +591,9 @@ def execute_chat_task(task_id, session_id, soru, attachments, *, on_status=None,
     else:
         _system_prompt = _UMAY_SYSTEM
 
-    # ── DIRECT TOOL EXECUTION (TIME/CALCULATOR/FILE/DOCUMENT) ──
+    # ── DIRECT TOOL EXECUTION (TIME/CALCULATOR/FILE/DOCUMENT/WEB/TERMINAL) ──
     # These tools are deterministic and don't need LLM involvement
-    if _intent in (Intent.TIME, Intent.CALCULATOR, Intent.FILE, Intent.DOCUMENT) and _intent_tools_list and not has_image:
+    if _intent in (Intent.TIME, Intent.CALCULATOR, Intent.FILE, Intent.DOCUMENT, Intent.WEB, Intent.TERMINAL) and _intent_tools_list and not has_image:
         try:
             from core.agent_tools import DISPATCH as _DISPATCH
             tool_results = []
@@ -705,6 +724,30 @@ def execute_chat_task(task_id, session_id, soru, attachments, *, on_status=None,
                                 continue
                         elif tool_name == "scan_directory":
                             tool_args = {"path": "."}
+                    elif _intent == Intent.WEB:
+                        if tool_name == "web_search":
+                            # Sorudan arama sorgusunu çıkar
+                            import re as _re
+                            _query = _re.sub(r'(internette|webde|web\'de|google\'da|ara\u015ftır|ara|bul|haberlerini|haberleri|haber)', '', soru, flags=_re.IGNORECASE).strip()
+                            if not _query:
+                                _query = soru  # Fallback: tüm soruyu arama olarak kullan
+                            tool_args = {"query": _query, "max_results": 5}
+                        elif tool_name in ("browser_open", "browser_read", "research_topic", "quick_research"):
+                            continue  # Sadece web_search direct — digerleri LLM'e biraksin
+                    elif _intent == Intent.TERMINAL:
+                        if tool_name == "run_command":
+                            import re as _re
+                            # Komutu sorudan cikar
+                            _cmd = soru.strip()
+                            # Yaygin prefix'leri kaldir
+                            for _prefix in ['cmdde ', 'cmd de ', 'terminalde ', 'komut calistir ', 'calistir ']:
+                                if _cmd.lower().startswith(_prefix):
+                                    _cmd = _cmd[len(_prefix):].strip()
+                            tool_args = {"command": _cmd}
+                        elif tool_name == "run_powershell":
+                            import re as _re
+                            _cmd = soru.strip()
+                            tool_args = {"command": _cmd}
                     try:
                         tool_result = _DISPATCH[tool_name](**tool_args)
                         t_tool_done = time.time()
@@ -739,6 +782,19 @@ def execute_chat_task(task_id, session_id, soru, attachments, *, on_status=None,
                         # Search results
                         matches = r["matches"]
                         result_parts.append(f"{len(matches)} eslesme bulundu")
+                    elif "results" in r and isinstance(r["results"], list):
+                        # Web search results
+                        results = r["results"]
+                        count = r.get("count", len(results))
+                        listing = "\n".join([f"  {i+1}. {res.get('title', '')}\n     {res.get('href', '')}" for i, res in enumerate(results[:5])])
+                        result_parts.append(f"🔍 {count} arama sonucu ({r.get('query', '')}):\n{listing}")
+                    elif "url" in r and "text" in r:
+                        # Browser open result
+                        text = r.get("text", "")[:500]
+                        if text:
+                            result_parts.append(f"📄 Sayfa icerigi ({r.get('url', '')}):\n{text}")
+                        else:
+                            result_parts.append(f"📄 Sayfa acildi: {r.get('url', '')}")
                     elif "file_count" in r:
                         # Document/Directory scan — show summary + top files
                         fc = r['file_count']
@@ -1413,7 +1469,8 @@ def conversations_list_api():
         convs = _conv.list_conversations(limit=50)
         result = []
         for c in convs:
-            history = _conv.get_history(c["id"], max_pairs=1)
+            history = _conv.get_history(c["id"], max_pairs=1)
+
             last_msg = history[-1]["content"][:80] if history else ""
             result.append({
                 "id": c["id"],

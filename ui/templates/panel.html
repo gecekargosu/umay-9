@@ -551,7 +551,8 @@ let chatHistory = [];
 let chatBusy = false;
 let selectedModel = 'auto';
 let selectedMode = 'auto';
-let conversationId = 'panel-' + Date.now();
+let conversationId = localStorage.getItem('umay_conversation_id') || ('panel-' + Date.now());
+if (!localStorage.getItem('umay_conversation_id')) localStorage.setItem('umay_conversation_id', conversationId);
 let availableModels = [];
 let currentTaskId = null;
 let currentTaskState = null;  // RUNNING, PAUSED, COMPLETED, CANCELLED
@@ -731,7 +732,9 @@ function showAttachments() {
 function removeAttachment(i) { pendingAttachments.splice(i, 1); showAttachments(); }
 
 async function clearChat() {
-  try { await fetch('/api/chat/clear', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({session_id: 'panel'})}); } catch(e) {}
+  try { await fetch('/api/chat/clear', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({session_id: conversationId})}); } catch(e) {}
+  conversationId = 'panel-' + Date.now();
+  localStorage.setItem('umay_conversation_id', conversationId);
   pendingAttachments = [];
   showAttachments();
   document.getElementById('chat-messages').innerHTML = '<div class="chat-msg assistant"><div class="bubble">Merhaba! Ben UMAY, kişisel yapay zeka asistanınızım. Size nasıl yardımcı olabilirim?<div class="meta">Model: auto | Conversation: new</div></div></div>';

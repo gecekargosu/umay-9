@@ -38,8 +38,8 @@ uploads/
 # Backups
 backup/
 
-# Logs (runtime)
-logs/
+# Logs (runtime, root only)
+/logs/
 
 # Freebuff internal
 .freebuff/

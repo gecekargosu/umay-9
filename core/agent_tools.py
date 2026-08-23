@@ -303,7 +303,7 @@ def web_search(query: str, max_results: int = 8) -> dict[str, Any]:
     duckduckgo-search kütüphanesi ile arama yapar.
     Başarısız olursa Playwright fallback kullanır.
     """
-    max_results = max(1, min(int(max_results), 20))
+    max_results = max(1, min(int(max_results), 50))
     aid = eylem_baslat("web_gateway", f"Web araması: {query[:100]}", "DuckDuckGo araması", "")
     
     # Yöntem 1: duckduckgo-search kütüphanesi (daha güvenilir)
@@ -313,7 +313,7 @@ def web_search(query: str, max_results: int = 8) -> dict[str, Any]:
             from ddgs import DDGS
         except ImportError:
             from duckduckgo_search import DDGS
-        results = DDGS().text(query, max_results=max_results)
+        results = DDGS().text(query, region="tr-tr", max_results=max_results)
         links = [{"title": r.get("title", ""), "href": r.get("href", "")} for r in results]
     except Exception as e:
         log(f"[SEARCH] duckduckgo-search hatası: {e}, Playwright deneniyor")

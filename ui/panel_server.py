@@ -462,6 +462,79 @@ def chat_clear():
     return jsonify({"ok": True, "message": "Session cleared"})
 
 
+def _format_tool_result(last_result, tool_name=None):
+    """Format tool result for display — no raw JSON dumps."""
+    import json as _json
+    try:
+        rdata = _json.loads(last_result) if isinstance(last_result, str) else last_result
+    except Exception:
+        # Not JSON — return as-is (truncated)
+        return str(last_result)[:1000] if last_result else "Sonuc bos."
+
+    if not isinstance(rdata, dict):
+        return str(rdata)[:1000]
+
+    # Web search results → markdown links
+    if "results" in rdata and isinstance(rdata["results"], list):
+        results = rdata["results"]
+        query = rdata.get("query", "")
+        count = len(results)
+        listing = chr(10).join([
+            "  " + str(i+1) + ". [" + res.get("title", "") + "](" + res.get("href", "") + ")"
+            for i, res in enumerate(results[:30])
+        ])
+        return chr(128269) + " " + str(count) + " arama sonucu (" + query + "):" + chr(10) + chr(10) + listing
+
+    # Terminal/command result
+    if "stdout" in rdata:
+        stdout = rdata.get("stdout", "")[:800]
+        stderr = rdata.get("stderr", "")
+        rc = rdata.get("returncode", "?")
+        cmd = rdata.get("command", "")
+        out = "Konsol cikti (" + cmd + "):" + chr(10) + chr(10)
+        out += "```" + chr(10) + stdout + chr(10) + "```"
+        if stderr:
+            out += chr(10) + chr(10) + "Hata:" + chr(10) + "```" + chr(10) + stderr[:300] + chr(10) + "```"
+        return out
+
+    # Time result
+    if "time" in rdata:
+        return "Saat: " + str(rdata.get("time", ""))
+
+    # Calculator result
+    if "result" in rdata:
+        return "Sonuc: " + str(rdata["result"])
+
+    # Date result
+    if "date" in rdata:
+        return "Tarih: " + str(rdata["date"])
+
+    # File listing
+    if "entries" in rdata:
+        entries = rdata["entries"]
+        count = rdata.get("count", len(entries))
+        listing = chr(10).join(["  " + e["path"] + " (" + e["type"] + ")" for e in entries[:20]])
+        return str(count) + " dosya/klasor bulundu:" + chr(10) + listing
+
+    # File content
+    if "content" in rdata:
+        content = rdata["content"][:800]
+        return "Dosya icerigi:" + chr(10) + "```" + chr(10) + content + chr(10) + "```"
+
+    # Browser page content
+    if "url" in rdata and "text" in rdata:
+        text = rdata.get("text", "")[:600]
+        url = rdata.get("url", "")
+        if text:
+            return "Sayfa icerigi [" + url + "](" + url + "):" + chr(10) + chr(10) + text
+        else:
+            return "Sayfa acildi: [" + url + "](" + url + ")"
+
+    # Fallback — show keys only, not full JSON
+    keys = list(rdata.keys())
+    return "Sonuc (" + ", ".join(keys) + "): " + str(rdata)[:500]
+
+
 # ─── STEP-05: Background Chat Execution ──────────────────────────────────────
 
 def execute_chat_task(task_id, session_id, soru, attachments, *, on_status=None, on_complete=None, on_error=None, model_override="auto", mode="auto"):
@@ -739,11 +812,14 @@ def execute_chat_task(task_id, session_id, soru, attachments, *, on_status=None,
                         if tool_name == "web_search":
                             # Sorudan arama sorgusunu çıkar
                             import re as _re
-                            _query = _re.sub(r'(internette|webde|web\'de|google\'da|ara\u015ftır|ara|bul|haberlerini|haberleri|haber)', '', soru, flags=_re.IGNORECASE).strip()
-                            if not _query:
-                                _query = soru  # Fallback: tüm soruyu arama olarak kullan
-                            tool_args = {"query": _query, "max_results": 5}
-                        elif tool_name in ("browser_open", "browser_read", "research_topic", "quick_research"):
+                            _fillers_re = r"^(internette|webde|web'de|google'da|google'de|şeklinde|araştır|ğağıt)\s+"
+                            _trailing_re = r"\s+(ara|bul|şeklinde|araştır|istiyorum|edebilirim|yap|mı?)?$"
+                            _query = _re.sub(_fillers_re, "", soru, flags=_re.IGNORECASE).strip()
+                            _query = _re.sub(_trailing_re, "", _query, flags=_re.IGNORECASE).strip()
+                            if not _query or len(_query) < 3:
+                                _query = soru
+                            tool_args = {"query": _query, "max_results": 50}
+                        elif tool_name in ("browser_open", "browser_read", "research_topic", "quick_research", "search_web", "open_and_read_page", "research_with_queries"):
                             continue  # Sadece web_search direct — digerleri LLM'e biraksin
                     elif _intent == Intent.TERMINAL:
                         if tool_name == "run_command":
@@ -797,17 +873,25 @@ def execute_chat_task(task_id, session_id, soru, attachments, *, on_status=None,
                         matches = r["matches"]
                         result_parts.append(f"{len(matches)} eslesme bulundu")
                     elif "results" in r and isinstance(r["results"], list):
-                        # Web search results — LLM'e gonder, analiz ettirsin
+                        import sys as _dbg2; print(f"[DEBUG-WEB] Found web results: {len(r.get('results', []))} items, tool={tr.get('tool')}", file=_dbg2.stderr)
+                        # Web search results -- format as clickable markdown links
                         results = r["results"]
                         count = r.get("count", len(results))
                         query = r.get("query", soru)
-                        # Sonuclari text formatina cevir
-                        results_text = "Arama sorgusu: " + query + chr(10) + chr(10) + "Bulunan sonuclar:" + chr(10)
-                        for i, res in enumerate(results[:5]):
-                            results_text += str(i+1) + ". " + res.get("title", "") + chr(10) + "   " + res.get("href", "") + chr(10) + chr(10)
-                        # LLM'e gonder: sonuclari analiz etsin
+                        # Build markdown links for LLM (up to 50 results)
+                        results_text = "Arama sorgusu: " + query + chr(10) + chr(10) + "Bulunan sonuclar (linkler dahil):" + chr(10)
+                        for i, res in enumerate(results[:50]):
+                            title = res.get("title", "")
+                            href = res.get("href", "")
+                            results_text += str(i+1) + ". [" + title + "](" + href + ")" + chr(10)
+                        # LLM: analyze results and include clickable links in response
                         try:
-                            _llm_prompt = "Sen UMAY'sin. Asagidaki web arama sonuclarini analiz et ve kullanicinin sorusuna gore cevap hazirla." + chr(10) + chr(10) + "Kullanici sorusu: " + soru + chr(10) + chr(10) + results_text + chr(10) + chr(10) + "Bu sonuclara gore kisa ve anlamlı bir cevap hazirla. Kaynak belirt."
+                            _llm_prompt = ("Sen UMAY'sin. Asagidaki web arama sonuclarini analiz et ve kullanicinin sorusuna gore cevap hazirla." + chr(10) + chr(10) +
+                                "ZORUNLU KURAL: Asagidaki sonuclardaki TUM [baslik](url) formatindaki linkleri cevabina MUTLAKA dahil et." + chr(10) +
+                                "En az 5-10 farkli linki [baslik](url) formatinda cevabina yaz." + chr(10) +
+                                "Ornek: [Haber Basligi](https://haber.com) seklinde yaz." + chr(10) + chr(10) +
+                                "Kullanici sorusu: " + soru + chr(10) + chr(10) + results_text + chr(10) + chr(10) +
+                                "Bu sonuclara gore kisa ve anlamlı bir cevap hazirla. En az 5-10 kaynagi [baslik](url) formatinda belirt.")
                             _llm_result = umay_chat([{"role": "user", "content": _llm_prompt}], model=resolve_model("chat"))
                             if isinstance(_llm_result, dict):
                                 _llm_msg = _llm_result.get("message", {})
@@ -815,8 +899,18 @@ def execute_chat_task(task_id, session_id, soru, attachments, *, on_status=None,
                             else:
                                 cevap = str(_llm_result)
                         except Exception as _llm_err:
-                            listing = chr(10).join([str(i+1) + ". " + res.get("title", "") + chr(10) + "   " + res.get("href", "") for i, res in enumerate(results[:5])])
-                            cevap = "\U0001f50d " + str(count) + " arama sonucu (" + query + "):" + chr(10) + chr(10) + listing
+                            # Fallback: markdown links without LLM
+                            listing = chr(10).join(["  " + str(i+1) + ". [" + res.get("title", "") + "](" + res.get("href", "") + ")" for i, res in enumerate(results[:50])])
+                            cevap = "🔍 " + str(count) + " arama sonucu (" + query + "):" + chr(10) + chr(10) + listing
+                        # Append clickable results list below LLM answer
+                        import sys as _dbg; print(f"[DEBUG] LLM cevap length: {len(cevap)}, appending results...", file=_dbg.stderr)
+                        _results_listing = chr(10) + chr(10) + "---" + chr(10) + chr(10)
+                        _results_listing += "🔍 " + str(count) + " arama sonucu:" + chr(10) + chr(10)
+                        for i, res in enumerate(results[:30]):
+                            _title = res.get("title", "")
+                            _href = res.get("href", "")
+                            _results_listing += str(i+1) + ". [" + _title + "](" + _href + ")" + chr(10)
+                        cevap = cevap + _results_listing
                         # Direkt cevap olarak don
                         t_end = time.time()
                         latency = {"total": round(t_end - t_start, 2), "router": round(t_router_done - t_router, 3), "model": 0}
@@ -1034,9 +1128,10 @@ def execute_chat_task(task_id, session_id, soru, attachments, *, on_status=None,
                     else:
                         cevap = f"Dosya okundu: {rdata.get('shown_lines', '?')} satir gosterildi."
                 else:
-                    cevap = f"Tool sonucu: {last_result[:500]}"
+                    # Smart formatting based on result type
+                    cevap = _format_tool_result(last_result, last_tool_name)
             except Exception:
-                cevap = f"Tool sonucu: {last_result[:500]}"
+                cevap = _format_tool_result(last_result, last_tool_name)
         else:
             cevap = msg.get("content", "") if msg else str(result)
 

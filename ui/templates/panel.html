@@ -761,10 +761,39 @@ function hideIntent() {
 // ─── CHAT ───
 function renderMd(text) {
   if (!text) return '';
-  let html = escHtml(text);
+  // Step 1: Extract markdown links [text](url) BEFORE escaping
+  const linkPattern = /\[([^\]]+)\]\(([^)]+)\)/g;
+  const links = [];
+  let processed = text.replace(linkPattern, (match, linkText, url) => {
+    const idx = links.length;
+    links.push({text: linkText, url: url});
+    return '%%LINK_' + idx + '%%';
+  });
+  // Step 2: Also extract bare URLs
+  const urlPattern = /(https?:\/\/[^\s<>"'()]+)/g;
+  const bareUrls = [];
+  processed = processed.replace(urlPattern, (match, url) => {
+    const idx = bareUrls.length;
+    bareUrls.push(url);
+    return '%%BAREURL_' + idx + '%%';
+  });
+  // Step 3: Escape HTML
+  let html = escHtml(processed);
+  // Step 4: Render markdown elements
   html = html.replace(/```(\w*)\n([\s\S]*?)```/g, (_, lang, code) => `<pre style="background:var(--bg-secondary);padding:6px;border-radius:var(--radius-sm);overflow-x:auto;font-size:10px;margin:4px 0;border:1px solid var(--border)"><code>${code}</code></pre>`);
   html = html.replace(/`([^`]+)`/g, '<code style="background:var(--bg-secondary);padding:1px 4px;border-radius:3px;font-size:10px">$1</code>');
   html = html.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+  // Step 5: Restore clickable markdown links
+  links.forEach((link, idx) => {
+    const safeText = escHtml(link.text);
+    const safeUrl = escHtml(link.url);
+    html = html.replace('%%LINK_' + idx + '%%', '<a href="' + safeUrl + '" target="_blank" rel="noopener" style="color:var(--accent,#f06e30);text-decoration:underline;cursor:pointer" onclick="event.stopPropagation()">' + safeText + '</a>');
+  });
+  // Step 6: Restore bare URLs as clickable links
+  bareUrls.forEach((url, idx) => {
+    const safeUrl = escHtml(url);
+    html = html.replace('%%BAREURL_' + idx + '%%', '<a href="' + safeUrl + '" target="_blank" rel="noopener" style="color:var(--accent,#f06e30);text-decoration:underline;cursor:pointer;word-break:break-all" onclick="event.stopPropagation()">' + safeUrl + '</a>');
+  });
   html = html.replace(/\n/g, '<br>');
   return html;
 }

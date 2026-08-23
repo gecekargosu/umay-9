@@ -290,7 +290,7 @@ class WebExplorer:
                 from ddgs import DDGS
             except ImportError:
                 from duckduckgo_search import DDGS
-            results = DDGS().text(query, max_results=max_results)
+            results = DDGS().text(query, region="tr-tr", max_results=max_results)
             return [{"title": r.get("title", ""), "href": r.get("href", "")} for r in results]
         except Exception as e:
             log(f"[WEB_RESEARCH] duckdreams-search hatası: {e}")

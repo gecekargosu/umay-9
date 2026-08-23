@@ -98,13 +98,15 @@ def resolve_model(task: str = "chat", requested: str | None = None) -> str | Non
 # Unified engine — provider abstraction with Ollama fallback
 # ---------------------------------------------------------------------------
 
-def _get_provider_and_model(task: str, requested_model: str | None = None):
+def _get_provider_and_model(task: str, requested_model: str | None = None, mode: str = "auto"):
     """Resolve provider and model for a task.
 
     Priority:
-    1. Environment-configured primary provider (PRIMARY_PROVIDER env var)
-    2. Task-specific provider (PROVIDER_<TASK> env var)
-    3. Ollama (default fallback)
+    1. If mode=="local", always use Ollama regardless of PRIMARY_PROVIDER
+    2. If mode=="online", prefer cloud provider if configured
+    3. Environment-configured primary provider (PRIMARY_PROVIDER env var)
+    4. Task-specific provider (PROVIDER_<TASK> env var)
+    5. Ollama (default fallback)
     """
     from core.model_providers import (
         get_primary_provider,
@@ -112,7 +114,20 @@ def _get_provider_and_model(task: str, requested_model: str | None = None):
         OllamaProvider,
     )
 
-    # Check task-specific provider override
+    # MODE-AWARE routing
+    if mode == "local":
+        # LOCAL: always use Ollama regardless of PRIMARY_PROVIDER
+        ollama = OllamaProvider()
+        if ollama.is_available():
+            return ollama, requested_model
+    elif mode == "online":
+        # ONLINE: prefer cloud provider if configured and available
+        primary = get_primary_provider()
+        if primary.name != "ollama" and primary.is_available():
+            return primary, requested_model
+        # Cloud not available — fall through to Ollama below
+
+    # AUTO or ONLINE fallback: check task-specific provider override
     task_provider_env = os.getenv(f"PROVIDER_{task.upper()}", "").strip().upper()
     if task_provider_env and task_provider_env != "OLLAMA":
         provider = get_provider(task_provider_env.lower())
@@ -188,10 +203,12 @@ def chat(
     task: str = "chat",
     tools: list[dict] | None = None,
     raw: bool = False,
+    mode: str = "auto",
 ) -> str | dict:
     """Multi-provider chat with tool calling support.
 
     Tries configured provider first, falls back to Ollama.
+    mode: 'local' forces Ollama, 'online' prefers cloud, 'auto' uses primary.
     """
     son_mesaj = next(
         (m.get("content", "") for m in reversed(messages) if m.get("role") == "user"),
@@ -207,8 +224,8 @@ def chat(
 
     # Try provider abstraction first
     try:
-        provider, resolved_model = _get_provider_and_model(task, model)
-        log(f"[ENGINE] {provider.name} ile sohbet başlatılıyor...")
+        provider, resolved_model = _get_provider_and_model(task, model, mode=mode)
+        log(f"[ENGINE] {provider.name} ile sohbet başlatılıyor (mode={mode})...")
         result = provider.chat(
             messages=messages,
             model=resolved_model,

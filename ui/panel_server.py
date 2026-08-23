@@ -884,7 +884,7 @@ def execute_chat_task(task_id, session_id, soru, attachments, *, on_status=None,
 
         t_model_start = time.time()
         try:
-            result = umay_chat(messages, model=model, tools=active_tools if use_tools else None)
+            result = umay_chat(messages, model=model, tools=active_tools if use_tools else None, mode=mode)
         except Exception as tool_exc:
             t_model_done = time.time()
             if on_status:

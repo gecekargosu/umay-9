@@ -265,14 +265,16 @@ def run_agent(
         try:
             from core import conversation_store as _conv
             session_id = context["session_id"]
-            raw_history = _conv.get_history(session_id, limit=10)
+            raw_history = _conv.get_history(session_id, max_pairs=10)
             for h in raw_history:
                 role = h.get("role", "user")
                 content = h.get("content", "")
                 if content and role in ("user", "assistant"):
                     history_messages.append({"role": role, "content": content})
-        except Exception:
-            pass
+        except Exception as exc:
+            from core.utils.logger import log
+            log(f"[AGENT] Conversation history okunamadi: {exc}")
+
 
     messages = [{"role": "system", "content": system_prompt}]
     messages.extend(history_messages)

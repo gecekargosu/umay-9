@@ -942,7 +942,23 @@ def execute_chat_task(task_id, session_id, soru, attachments, *, on_status=None,
                         # Document search
                         results = r["results"]
                         result_parts.append(f"{len(results)} sonuc bulundu")
-                    else: result_parts.append(str(r)[:300])
+                    elif "stdout" in r:
+                        # Terminal/command result
+                        _ts_stdout = r.get("stdout", "")[:800]
+                        _ts_stderr = r.get("stderr", "")
+                        _ts_cmd = r.get("command", "")
+                        _ts_out = "Konsol cikti (" + _ts_cmd + "):" + chr(10) + chr(10) + "```" + chr(10) + _ts_stdout + chr(10) + "```"
+                        if _ts_stderr:
+                            _ts_out += chr(10) + chr(10) + "Hata:" + chr(10) + "```" + chr(10) + _ts_stderr[:300] + chr(10) + "```"
+                        result_parts.append(_ts_out)
+                    elif "os" in r and "platform" in r:
+                        # System info
+                        result_parts.append("Sistem: " + r.get("os","?") + " / " + r.get("platform","?") + " | Python: " + str(r.get("python_version","?"))[:30] + " | CWD: " + r.get("cwd","?"))
+                    elif "output" in r and "status" in r:
+                        # Process list
+                        result_parts.append("Aktif surecler:" + chr(10) + chr(10) + "```" + chr(10) + r.get("output","")[:500] + chr(10) + "```")
+                    else:
+                        result_parts.append(str(r)[:300])
                 cevap = "\n".join(result_parts)
                 t_end = time.time()
                 latency = {

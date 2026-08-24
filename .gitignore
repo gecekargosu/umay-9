@@ -1,19 +1,6 @@
-# Python
-cache/
-*.log
+# ONLY exclude secrets and cache - everything else goes to GitHub
 
-# IDE/Editor
-.vscode/
-.idea/
-*.swp
-*.swo
-*~
-
-# RAG vector databases
-rag/vector_db/
-rag/chroma/
-
-# Secrets / credentials / API keys
+# Secrets / credentials / API keys - NEVER upload these
 .env
 .env.*
 *.env
@@ -23,49 +10,27 @@ rag/chroma/
 *.session-journal
 telegram_user_sessions/
 
-# Memory databases (runtime data)
-/memory/
-
-# User personal data (CV, job apps, etc.)
-UMAY_MEMORY/
-
-# Archived data
-UMAY_ARCHIVE/
-
-# Uploads (user files)
-uploads/
-
-# Backups
-backup/
-
-# Logs (runtime, root only)
-/logs/
-
-# Freebuff internal
-.freebuff/
-.freebuff*
-
-# Pycache (catch-all)
+# Python cache
 __pycache__/
+*.pyc
 
-# Temp files
-tests/_*.py
-tests/_*.txt
-tests/_*.b64
-temp/
-
-# Build artifacts
-*.egg-info/
-dist/
-build/
+# IDE
+.vscode/
+.idea/
 
 # OS files
 .DS_Store
 Thumbs.db
 desktop.ini
 
-# ZIP archives (large binary files)
-*.zip
+# Temp / build
+*.egg-info/
+dist/
+build/
+temp/
+.pytest_cache/
 
-# Docker runtime data
-.dockerignore
+# RAG databases (large binary)
+rag/vector_db/
+rag/chroma/
+/memory/

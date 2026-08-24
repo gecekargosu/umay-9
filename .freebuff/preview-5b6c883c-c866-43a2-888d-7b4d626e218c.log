@@ -1,0 +1,18 @@
+ Telegram: YAPILANDIRILMAMIÞ (devre dýþý)
+[17:17:22] [TELEGRAM_USER] Telethon kurulu deðil; user client baþlatýlmadý.
+ Telegram User Account: BAÞLATILAMADI
+[17:17:22] [WORKER] Background worker started
+[17:17:22] [WORKER] Background worker thread started
+[17:17:22] [SCHEDULER] Loaded 1 tasks from state
+[17:17:22] [SCHEDULER] Scheduler started
+[17:17:22] [SCHEDULER] Scheduler thread started
+ Background Worker: BAÞLATILDI
+ Scheduler: BAÞLATILDI
+
+==================================================
+ UMAY Kontrol Paneli
+ Adres: http://localhost:5001
+==================================================
+
+ * Serving Flask app 'panel_server'
+ * Debug mode: off

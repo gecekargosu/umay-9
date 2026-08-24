@@ -1,0 +1,10 @@
+{
+  "from": "tes***",
+  "to": [
+    "a@b.com"
+  ],
+  "subject": "Test",
+  "body": "Hello",
+  "is_html": false,
+  "created_at": "2026-08-23T01:33:03.190311"
+}

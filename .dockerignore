@@ -1,0 +1,51 @@
+# ─── UMAY .dockerignore ─────────────────────────────────────────────────────
+# Git
+.git
+.gitignore
+
+# Python
+__pycache__
+*.pyc
+*.pyo
+*.egg-info
+.venv
+venv
+env
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+
+# Logs (mounted as volume)
+logs/
+
+# Docker
+Dockerfile
+docker-compose.yml
+docker-compose*.yml
+.dockerignore
+
+# Tests (isteğe bağlı: test dosyalarını image'a dahil etme)
+# tests/
+
+# Backup
+backup/
+update/
+
+# Pytest
+.pytest_cache
+
+# Secrets
+.env
+.env.*
+*.env
+
+# Memory (mounted as volume)
+memory/chroma/
+
+# Temporary
+temp/
+cache/
+*.tmp

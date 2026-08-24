@@ -1,0 +1,31 @@
+Werkzeug appears to be used in a production deployment. Consider switching to a production web server instead.
+WARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5001
+ * Running on http://192.168.1.36:5001
+Press CTRL+C to quit
+127.0.0.1 - - [23/Aug/2026 21:16:01] "GET /api/logs HTTP/1.1" 200 -
+127.0.0.1 - - [23/Aug/2026 21:16:01] "GET /socket.io/?EIO=4&transport=polling&t=Q0lrZ4P HTTP/1.1" 200 -
+127.0.0.1 - - [23/Aug/2026 21:16:01] "POST /socket.io/?EIO=4&transport=polling&t=Q0lrZ4Y&sid=I5UtKs-nMMNWvBkFAAAA HTTP/1.1" 200 -
+127.0.0.1 - - [23/Aug/2026 21:16:01] "GET /socket.io/?EIO=4&transport=polling&t=Q0lrZ4Z&sid=I5UtKs-nMMNWvBkFAAAA HTTP/1.1" 200 -
+127.0.0.1 - - [23/Aug/2026 21:16:22] "GET /api/health HTTP/1.1" 200 -
+127.0.0.1 - - [23/Aug/2026 21:16:49] "POST /api/chat HTTP/1.1" 200 -
+127.0.0.1 - - [23/Aug/2026 21:16:53] "POST /api/chat HTTP/1.1" 200 -
+127.0.0.1 - - [23/Aug/2026 21:16:57] "POST /api/chat HTTP/1.1" 200 -
+127.0.0.1 - - [23/Aug/2026 21:18:33] "GET /api/health HTTP/1.1" 200 -
+127.0.0.1 - - [23/Aug/2026 21:28:12] "GET /api/system HTTP/1.1" 200 -
+127.0.0.1 - - [23/Aug/2026 21:28:12] "GET /api/agents HTTP/1.1" 200 -
+127.0.0.1 - - [23/Aug/2026 21:28:12] "GET /api/logs HTTP/1.1" 200 -
+127.0.0.1 - - [23/Aug/2026 21:28:18] "GET /api/system HTTP/1.1" 200 -
+127.0.0.1 - - [23/Aug/2026 21:28:19] "GET /api/agents HTTP/1.1" 200 -
+127.0.0.1 - - [23/Aug/2026 21:28:19] "GET /api/logs HTTP/1.1" 200 -
+127.0.0.1 - - [23/Aug/2026 21:36:54] "GET /api/chat/history HTTP/1.1" 200 -
+127.0.0.1 - - [23/Aug/2026 21:37:46] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [23/Aug/2026 21:37:47] "GET /socket.io/?EIO=4&transport=polling&t=Q0lwXry HTTP/1.1" 200 -
+127.0.0.1 - - [23/Aug/2026 21:37:47] "GET /api/system HTTP/1.1" 200 -
+127.0.0.1 - - [23/Aug/2026 21:37:47] "GET /favicon.ico HTTP/1.1" 404 -
+127.0.0.1 - - [23/Aug/2026 21:37:47] "POST /socket.io/?EIO=4&transport=polling&t=Q0lwXs2&sid=wMdVu1ThzCNvOUwmAAAC HTTP/1.1" 200 -
+127.0.0.1 - - [23/Aug/2026 21:37:47] "GET /socket.io/?EIO=4&transport=polling&t=Q0lwXs3&sid=wMdVu1ThzCNvOUwmAAAC HTTP/1.1" 200 -
+127.0.0.1 - - [23/Aug/2026 21:37:47] "GET /api/models HTTP/1.1" 200 -
+127.0.0.1 - - [23/Aug/2026 21:37:47] "GET /api/agents HTTP/1.1" 200 -
+127.0.0.1 - - [23/Aug/2026 21:37:48] "GET /api/logs HTTP/1.1" 200 -

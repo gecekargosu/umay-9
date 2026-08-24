@@ -1,0 +1,19 @@
+{
+  "t1": {
+    "task_id": "t1",
+    "name": "Test",
+    "func_name": "noop",
+    "interval_seconds": null,
+    "cron_expression": null,
+    "one_time": false,
+    "run_at": null,
+    "enabled": true,
+    "description": "",
+    "payload": {},
+    "last_run": null,
+    "next_run": null,
+    "run_count": 0,
+    "error_count": 0,
+    "last_error": null
+  }
+}

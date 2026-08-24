@@ -1,0 +1,15 @@
+UMAY 9 Test Dosyasi
+===================
+
+Bu dosya UMAY 9'un dosya yukleme ve analiz yeteneklerini test etmek icin olusturulmustur.
+
+Test Degerleri:
+- Proje: UMAY 9
+- Gelistirici: Cengiz Kilarc
+- Tarih: 23 Agustos 2026
+- Versiyon: 9.0
+- Gizli Anahtar: UMAY_SECRET_84721
+
+Ozet:
+UMAY 9, bir yapay zeka calistirma sistemi. Dashboard, Chat, Browser, Telegram gibi moduller icerir.
+Amaci: Kullaniciya yardimci olmak, gorevleri otomatiklestirmek, ve ogrenmektir.

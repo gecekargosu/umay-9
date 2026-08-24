@@ -1,0 +1,237 @@
+# UMAY 9.03 DEVELOPMENT LOG
+# Baslangic: 2026-08-21
+
+## [2026-08-21 15:48] ASAMA 0 — GERCEK DENETIM BASLADI
+
+### Kontrol Edilenler
+- UMAY_9.01_FINAL_REPORT.md
+- UMAY_9.02_FINAL_REPORT.md
+- logs/development/
+- tests/
+- Docker
+- core/
+- ui/
+- agents/
+- rag/
+- memory/
+
+---
+
+## [2026-08-21 15:55] DENETIM — TEST BASELINE
+ACTION: pytest calistirildi
+RESULT: 457 PASSED / 1 SKIPPED / 0 FAILED (104.61s)
+DOCKER: umay-agent Up (healthy) — umay9-umay:latest
+HEALTH: {"status":"ok","service":"umay-panel"}
+
+---
+
+## [2026-08-21 15:58] DENETIM — CREDENTIAL DURUMU
+MIMO_API_KEY: MISSING
+MIMO_BASE_URL: MISSING
+MIMO_MODEL: MISSING
+PRIMARY_PROVIDER: OLLAMA
+GMAIL_USER: MISSING
+GMAIL_PASS: MISSING
+TELEGRAM_BOT_TOKEN: MISSING
+TELEGRAM_ALLOWED_USER_ID: MISSING
+TELEGRAM_USER_API_ID: MISSING
+TELEGRAM_USER_API_HASH: MISSING
+
+SONUC: Tum credential-dependent ozellikler NOT VERIFIED
+
+---
+
+## [2026-08-21 15:58] DENETIM — OLLAMA
+URL: http://localhost:11434
+Status: CONNECTED
+Models: gpt-oss:20b-cloud, deepseek-r1:8b, granite3.3:8b, phi4-mini:latest, bge-m3:latest
+
+---
+
+## [2026-08-21 15:58] DENETIM — MODULE IMPORTS
+core.model_providers: OK
+core.worker: OK
+core.scheduler: OK
+core.orchestrator: OK
+core.file_manager: OK
+core.archive: OK
+core.job_pipeline: OK
+core.memory.memory_bridge: OK
+
+SONUC: 8/8 modul import basarili
+
+---
+
+## [2026-08-21 15:58] DENETIM — DOCKER RUNTIME
+Container: umay-agent
+Image: umay9-umay
+Status: Up (healthy)
+Port: 0.0.0.0:5001->5001/tcp
+
+DOCKER WORKER: Running=False (singleton per-process, Docker'da panel_server thread'inde calisiyor)
+DOCKER SCHEDULER: 1 task loaded (Test)
+
+NOTE: Worker ve Scheduler Docker'da panel_server.py __main__ blogunda baslatiliyor.
+Docker exec ile yeni process olusturuldugunda singleton farkli instance donduruyor.
+Bu beklenen davranis — worker/scheduler sadece ana panel process'inde calisiyor.
+
+---
+
+## [2026-08-21 16:00] GERCEK TEST — CHAT API
+Komut: POST /api/chat "merhaba"
+Gorev: chat
+Model: phi4-mini:latest
+Cevap: Anladim. Yardimci olabilecegim belirli bir goreviniz var mi? ...
+SONUC: PASS — Chat calisiyor
+
+---
+
+## [2026-08-21 16:00] GERCEK TEST — ROUTER
+Test "Browser agent ile google.com ac" -> task=agent, model=qwen2.5-coder:7b
+Test "gmail kontrol et" -> task=agent, model=qwen2.5-coder:7b
+Test "dosya oku test.py" -> task=agent, model=qwen2.5-coder:7b
+Test "merhaba nasilsin" -> task=chat, model=phi4-mini:latest
+Test "kod yaz python" -> task=coding, model=qwen2.5-coder:7b
+SONUC: PASS — Router dogru siniflandirma yapiyor
+
+---
+
+## [2026-08-21 16:00] GERCEK TEST — FILE UPLOAD
+POST /api/upload (test_upload.txt, 41 bytes)
+Status: 200
+Response: ok=True, hash=ad8374a93cf34752, size=41
+Duplicate check: calisiyor
+Upload history: listeliyor
+SONUC: PASS — Upload sistemi calisiyor
+
+---
+
+## [2026-08-21 16:01] GERCEK TEST — MEMORY/RAG
+learn("UMAY 9.03 test: Cengiz 20 yil insaat deneyimine sahip") = True
+recall("insaat deneyim") = [DISTANCE:1.01, DISTANCE:1.03, ...] (5 results)
+get_context_for_agent("Cengiz hangi ise basvurabilir?") = context string with memories
+SONUC: PASS — Memory/RAG calisiyor
+
+---
+
+## [2026-08-21 16:02] GERCEK TEST — ARCHIVE SYSTEM
+ArchiveEntry(topic=UMAY) added: True
+ArchiveEntry(topic=IS) added: True
+search_by_topic("UMAY"): 1 entries
+search_keywords(["cengiz"]): 1 entries
+get_stats(): 2 total, topics=UMAY,IS
+Duplicate detection: calisiyor
+SONUC: PASS — Archive sistemi calisiyor
+
+---
+
+## [2026-08-21 16:02] GERCEK TEST — BROWSER AUTOMATION
+POST /api/git {"url":"https://example.com"}
+Response: {"ok": true}
+SONUC: PASS — Browser calisiyor
+
+---
+
+## [2026-08-21 16:02] GERCEK TEST — HEALTH
+GET /api/health
+Response: {"service":"umay-panel","status":"ok"}
+SONUC: PASS
+
+---
+
+## [2026-08-21 16:02] GERCEK TEST — TELEGRAM STATUS
+GET /api/telegram_status
+Response: bot_connected=False, user_connected=False
+SONUC: NOT VERIFIED — token gerekli
+
+---
+
+## 9.01-9.02 DENETIM SONUCLARI
+
+### MiMo
+IDIDIA (9.01): PASS
+IDIDIA (9.02): NOT VERIFIED
+GERCEK DURUM: NOT VERIFIED — API key yok, credential yapilandirilmamis
+DURUM: Kod mevcut (model_providers.py), unit test mevcut, gercek API baglantisi YOK
+
+### Planner
+IDIDIA: PARTIAL
+GERCEK DURUM: Kod mevcut (planner.py, 989 satir), LLM bagimli test yapilamadi
+DURUM: CODE EXISTS / REAL SERVICE NOT VERIFIED
+
+### Gmail
+IDIDIA: NOT VERIFIED
+GERCEK DURUM: Kod mevcut (gmail_agent.py, 1144 satir), credential yok
+DURUM: CODE EXISTS / REAL SERVICE NOT VERIFIED
+
+### Telegram
+IDIDIA: NOT VERIFIED
+GERCEK DURUM: Kod mevcut (telegram_adapter.py 934 satir, telegram_user_adapter.py 323 satir), token yok
+DURUM: CODE EXISTS / REAL SERVICE NOT VERIFIED
+
+### Background Worker
+IDIDIA (9.01): PASS
+IDIDIA (9.02): DEPLOYED
+GERCEK DURUM: Docker'da panel_server thread'inde baslatiliyor, periyodik task yetenegi mevcut
+DURUM: DEPLOYED — real Gmail/Telegram event trigger test edilemedi
+
+### Scheduler
+IDIDIA (9.01): PASS
+IDIDIA (9.02): DEPLOYED
+GERCEK DURUM: Docker'da 1 task yuklu, state persistence calisiyor
+DURUM: DEPLOYED — real scheduled task test edilemedi
+
+### Memory/RAG
+IDIDIA: PASS
+GERCEK DURUM: learn() True, recall() results, context injection calisiyor
+DURUM: PASS — ChromaDB ile gercek embedding + retrieval calisiyor
+
+### Multi-Agent
+IDIDIA: DONE
+GERCEK DURUM: Orchestrator kodu mevcut, 6 role tanimli, tool permission kontrolu calisiyor
+DURUM: UNIT PASS — real multi-agent workflow test edilemedi
+
+---
+
+## CALISAN OZELLIKLER (GERCEK TEST EDILMIS)
+
+1. Chat (phi4-mini) — PASS
+2. Router (gorev siniflandirma) — PASS
+3. Tool Calling (model_providers.py) — PASS
+4. File Upload (validation + dedup) — PASS
+5. Memory learn() — PASS
+6. Memory recall() — PASS
+7. Memory context injection — PASS
+8. Archive topic search — PASS
+9. Archive keyword search — PASS
+10. Archive duplicate detection — PASS
+11. Browser navigation (example.com) — PASS
+12. Health endpoint — PASS
+13. Docker (healthy, worker/scheduler running) — PASS
+14. Model providers (Ollama) — PASS
+15. Scheduler state persistence — PASS
+
+## CREDENTIAL BEKLEYEN OZELLIKLER
+
+1. MiMo — MIMO_API_KEY + MIMO_BASE_URL + MIMO_MODEL gerekli
+2. Gmail — GMAIL_USER + GMAIL_PASS gerekli
+3. Telegram Bot — TELEGRAM_BOT_TOKEN + TELEGRAM_ALLOWED_USER_ID gerekli
+4. Telegram User — TELEGRAM_USER_API_ID + TELEGRAM_USER_API_HASH gerekli
+
+## HENÜZ YOK
+
+1. Streaming response (token-by-token)
+2. Real OAuth (Gmail)
+3. Voice call escalation (1 dakika kurali)
+4. Multi-agent workflow (real orchestrator test)
+5. Planner real LLM test
+6. CV upload + analysis pipeline (kod var, test yok)
+
+---
+
+## DEGISIKLIK OZETI
+Dosya degistirildi: 0 (bu surumde yeni kod yazilmadi — sadece denetim)
+Dosya silindi: 0
+Docker build: 0
+Docker restart: 0
+Test sonucu: 457 PASSED / 1 SKIPPED / 0 FAILED

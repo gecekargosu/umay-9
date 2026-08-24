@@ -1,0 +1,110 @@
+# UMAY 9.03 X-RAY DEVELOPMENT LOG
+# Baslangic: 2026-08-21
+
+## [2026-08-21 16:05] XRAY BASLADI
+
+Baseline: 457 PASSED / 1 SKIPPED / 0 FAILED
+Docker: umay-agent Up (healthy)
+Health: OK
+
+---
+
+## [2026-08-21 16:10] KOD ANALIZI
+80 Python dosyasi, 20119 satir, 190 class, 334 fonksiyon
+55 tool kayitli
+7 agent role tanimli
+
+---
+
+## [2026-08-21 16:11] RUNTIME TESTLER
+
+[01] CHAT: VERIFIED (200 OK, phi4-mini)
+[02] ROUTER: VERIFIED (5/5 siniflandirma dogru)
+[03] FILE UPLOAD: VERIFIED (200 OK, validation + dedup)
+[04] MEMORY: VERIFIED (learn=True, recall=5, context=433 chars)
+[05] ARCHIVE: VERIFIED (topic + keyword search)
+[06] BROWSER: VERIFIED (example.com acildi)
+[07] HEALTH: VERIFIED (200 OK)
+[08] TELEGRAM: CREDENTIAL REQUIRED
+[09] UPLOAD LIST: VERIFIED (2 dosya listelendi)
+
+---
+
+## [2026-08-21 16:12] DERIN TESTLER
+
+[10] PLANNER: CODE EXISTS — 989 satir, 5 engine (ExecutionEngine, ReasoningEngine, etc.)
+     Has execute method: NO (real LLM execution NOT VERIFIED)
+[11] MULTI-AGENT: UNIT PASS — Permission isolation OK (web_agent can't gmail_send)
+[12] TOOL REGISTRY: VERIFIED — 55 tools, 55 dispatch
+[13] ENGINE OLLAMA: VERIFIED — chat=phi4-mini, agent=qwen2.5-coder, coding=qwen2.5-coder
+[14] MODEL PROVIDERS: VERIFIED — Ollama available, 5 models
+[15] IDENTITY: VERIFIED — 4960 chars system prompt
+[16] DOCUMENT READER: CODE EXISTS — 14 functions (read_pdf, read_word, read_csv, etc.)
+[17] VISION READER: CODE EXISTS — 15 functions (analyze_image, OCR, etc.)
+[18] WEB RESEARCH: CODE EXISTS — ResearchPlanner, MultiSourceComparator, etc.
+[19] CODE AGENT: CODE EXISTS — 18 functions
+[20] TERMINAL AGENT: CODE EXISTS — 16 functions
+[21] APPROVAL MANAGER: CODE EXISTS — 12 functions
+[22] COMMUNICATION MANAGER: CODE EXISTS — 7 classes/functions
+[23] AUDIT: CODE EXISTS — 4 functions
+[24] CONFIG MANAGER: CODE EXISTS
+
+---
+
+## [2026-08-21 16:13] DOCKER + GELISMIS TESTLER
+
+[25] DOCKER WORKER/SCHEDULER: VERIFIED (health OK, Docker logs confirm startup)
+[26] STREAMING: PARTIAL — task_status events YES, token-by-token NO
+[27] ERROR RECOVERY: VERIFIED (.exe rejected, oversized rejected, empty rejected)
+[28] CHAT ERROR HANDLING: PARTIAL (empty msg -> 200 OK, no crash)
+[29] TOOL CALLING VIA CHAT: PARTIAL (gorev=chat instead of agent for some inputs)
+[30] FILE FORMAT: VERIFIED (txt, csv, json upload OK)
+[31] WORKER EVENT SYSTEM: VERIFIED (EventBus unit test OK)
+[32] SCHEDULER PERSISTENCE: VERIFIED (1 task loaded from state file)
+
+---
+
+## [2026-08-21 16:14] FINAL TESTLER
+
+[33] MEMORY PERSISTENCE: VERIFIED (recall returns 5 results)
+[34] CHROMADB: VERIFIED (search returns 3 results)
+[35] BROWSER AGENT: LEVEL 4 RUNTIME PASS (25 methods, real site tested)
+[36] GMAIL: CREDENTIAL REQUIRED (30+ functions exist, no credentials)
+[37] TELEGRAM: CREDENTIAL REQUIRED (11 adapter functions, no token)
+[38] JOB PIPELINE: CODE EXISTS (12 functions)
+[39] GEMINI AGENT: CODE EXISTS (ask_gemini function)
+[40] RAG CHROMA MANAGER: CODE EXISTS
+[41] LOGGING: VERIFIED (log() works, log file exists)
+[42] ACTION LOGGER: BROKEN (import error - log_action not found)
+[43] PANEL TEMPLATE: VERIFIED (chat, socketio, screenshot, browser, telegram, status, task_status, log)
+[44] DOCKERFILE: VERIFIED (EXPOSE 5001, healthcheck, python)
+[45] DOCKER COMPOSE: VERIFIED (port 5001, ollama, telegram)
+[46] REQUIREMENTS: VERIFIED (flask, playwright, chromadb, requests, dotenv, socketio)
+[47] ENV EXAMPLE: VERIFIED (OLLAMA_URL, MIMO_API_KEY, TELEGRAM_BOT_TOKEN)
+[48] KNOWLEDGE FILES: VERIFIED (5 files)
+[49] PROFILES: MISSING (empty directory)
+[50] E2E CHAT: VERIFIED (cevap+model+gorev all present)
+
+---
+
+## SOURCE INTEGRITY
+
+C:/UMAY: UNCHANGED (hash verified)
+UMAY 8: READ-ONLY (path inaccessible via bash, Turkish chars)
+
+---
+
+## FINAL DURUM
+
+VERIFIED: 20/50
+PARTIAL: 5/50
+CODE EXISTS: 14/50
+CREDENTIAL REQUIRED: 4/50
+BROKEN: 1/50
+MISSING: 1/50
+BLOCKED: 0/50
+UNKNOWN: 0/50
+CONFIG/INFRA: 5/50
+
+Regression: 457 PASSED / 1 SKIPPED / 0 FAILED (unchanged)
+Dosya degistirildi: 0 (sadece denetim)

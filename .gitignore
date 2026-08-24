@@ -62,3 +62,7 @@ uploads/
 
 # ─── Docker runtime ──────────────────────────────────────────────────────────
 .docker/
+
+# Watchdog runtime data
+scripts/watchdog/state/
+scripts/watchdog/reports/

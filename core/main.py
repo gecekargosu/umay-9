@@ -3,8 +3,8 @@
 SAFE TO IMPORT: This module performs NO side effects at import time.
 All Ollama/network calls are inside __main__ guard.
 """
-import sys
 import os
+import sys
 from pathlib import Path
 
 
@@ -14,10 +14,10 @@ def main():
     sys.path.insert(0, str(ROOT))
     sys.path.insert(0, os.path.dirname(__file__))
 
-    from system.system_info import system_check
     from models.model_manager import list_models
-    from utils.logger import log
     from router import model_sec
+    from system.system_info import system_check
+    from utils.logger import log
 
     print("\n========== UMAY AI OS ==========\n")
 

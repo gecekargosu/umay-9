@@ -16,15 +16,16 @@ Design principles (from STEP-04 audit §6 and blueprint §22/§23):
 from __future__ import annotations
 
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any, Callable
+from typing import Any
 
 from core.token_budget import (
-    estimate_usage,
-    check_budget,
     DEFAULT_CONTEXT_LIMIT_TOKENS,
     STATUS_EXCEEDED,
     STATUS_WARNING,
+    check_budget,
+    estimate_usage,
 )
 from core.utils.logger import log
 

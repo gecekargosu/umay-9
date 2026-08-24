@@ -22,7 +22,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-from core.utils.action_logger import eylem_baslat, eylem_tamamla, eylem_hata
+from core.utils.action_logger import eylem_baslat, eylem_hata, eylem_tamamla
 
 # ─── Sabitler ────────────────────────────────────────────────────────────────
 
@@ -658,8 +658,8 @@ def find_process(name: str) -> dict[str, Any]:
 
 def open_file(path: str) -> dict[str, Any]:
     """Bir dosyayı varsayılan uygulama ile aç (Windows: start, Linux: xdg-open)."""
-    import subprocess
     import platform
+    import subprocess
     from pathlib import Path
 
     p = Path(path)
@@ -681,8 +681,8 @@ def open_file(path: str) -> dict[str, Any]:
 
 def open_folder(path: str = ".") -> dict[str, Any]:
     """Klasörü dosya yöneticisinde aç."""
-    import subprocess
     import platform
+    import subprocess
     from pathlib import Path
 
     p = Path(path)
@@ -706,8 +706,8 @@ def open_folder(path: str = ".") -> dict[str, Any]:
 
 def open_url(url: str) -> dict[str, Any]:
     """URL'yi varsayılan tarayıcıda aç."""
-    import subprocess
     import platform
+    import subprocess
 
     if not url.startswith(("http://", "https://")):
         url = "https://" + url
@@ -727,8 +727,8 @@ def open_url(url: str) -> dict[str, Any]:
 
 def open_with_app(app_name: str, path: str) -> dict[str, Any]:
     """Belirli bir uygulama ile dosya aç (örn: notepad, code, calc)."""
-    import subprocess
     import platform
+    import subprocess
     from pathlib import Path
 
     p = Path(path)

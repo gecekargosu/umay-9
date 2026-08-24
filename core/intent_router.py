@@ -245,7 +245,7 @@ def classify_intent(text: str) -> Intent:
 
     # ── ÖNCE DOSYA/KOD/TERMINAL KONTROL ET (Calculator'dan ÖNCE) ──
     import re as _re
-    
+
     # Dosya yolu pattern'i: \ (Windows path) veya / ile kelime kelimeden oluşan path'ler
     # NOT: Boşluklu '/' ("100 / 5") dosya yolu DEĞİL, bölme işlemidir
     has_file_path = bool(_re.search(r'\\|[a-zA-Z0-9_]/[a-zA-Z0-9_.]|[.]\w{1,5}\b', text_lower))
@@ -258,14 +258,14 @@ def classify_intent(text: str) -> Intent:
     # "ilk X satır", "son X satır" gibi dosya okuma kalıpları
     # NOT: "10 satırlık kod" bu pattern DEĞİL — kod üretme isteği
     has_line_pattern = bool(_re.search(r'\b(ilk|son|tüm|tum)\s*\d*\s*(satır|satiri|line|row)\b', text_lower))
-    
+
     # Eğer dosya/kod kalıbı varsa Calculator'a gitme
     if has_file_path or has_code_pattern or has_file_ext or has_line_pattern or has_file_ext_suffix:
         # Dosya/kod kalıbı varsa Calculator tetikleme
         _skip_calculator = True
     else:
         _skip_calculator = False
-    
+
     # 1. Matematik operatörleri (SADECE gerçek matematik bağlamında)
     has_numbers = bool(_re.search(r'\d', text_lower))
     # Tek karakter operatörler tek başına yeterli değil — sayı komşuluğunda olmalı
@@ -281,7 +281,7 @@ def classify_intent(text: str) -> Intent:
     # 'x' harfi sadece sayilar arasindaysa carpma isareti sayilir: "125 x 48"
     if not has_math_ops:
         has_math_ops = bool(_re.search(r'\d\s*x\s*\d', text_lower))
-    
+
     # 2. Türkçe matematik kelimeleri (SADECE kesin matematik bağlamında)
     # NOT: 'matematik', 'ortalama', 'işlem', 'hesapla' tek başına CALCULATOR tetiklemez
     # Çünkü "İnternette matematik haberleri" WEB olmalı
@@ -302,7 +302,7 @@ def classify_intent(text: str) -> Intent:
     has_hesapla_with_number = has_numbers and any(w in text_lower for w in ['hesapla', 'hesaplama', 'hesaplayalım'])
     if has_hesapla_with_number:
         has_math_words = True
-    # 'ortalama' SADECE sayı ile birlikteyse CALCULATOR  
+    # 'ortalama' SADECE sayı ile birlikteyse CALCULATOR
     has_ortalama_with_number = has_numbers and any(w in text_lower for w in ['ortalama', 'yüzde', 'yuzde'])
     if has_ortalama_with_number:
         has_math_words = True
@@ -312,25 +312,25 @@ def classify_intent(text: str) -> Intent:
     has_math_term_with_ops = has_numbers and has_math_ops and any(w in text_lower for w in ['matematik', 'işlem', 'islem'])
     if has_math_term_with_ops:
         has_math_words = True
-    
+
     # 3. X ile Y topla / X'den Y çıkar / X'i Y'ye böl gibi pattern'lar
     has_turkish_math_pattern = bool(_re.search(
         r'(\d+\s*(ile|den|i|e|yi|yı|nin|nın|ün|ün|in|in)\s*\d+\s*(topla|carp|çarp|bol|böl|çıkart|cikart|çıkar|cikar))',
         text_lower
     ))
-    
+
     # 4. X'in karesi / X'in küpü gibi pattern'lar
     has_power_pattern = bool(_re.search(
         r'(\d+\s*(nin|nın|ün|ün|in|in)\s*(karesi|karesini|küpü|küpünü|kupu|kupunu))',
         text_lower
     ))
-    
+
     # 5. Yüzde hesaplama pattern'ı
     has_percentage_pattern = bool(_re.search(
         r'(\d+\s*(ün|ın|in|nin|nın)\s*%?\s*\d*\s*(yüzdesi|yuzdesi|kaç|kac))',
         text_lower
     ))
-    
+
     # Negation detection: "hesaplamanı değil", "hesaplama istemiyorum" gibi ifadeler calculator'a gitmemeli
     has_negation_around_math = bool(_re.search(
         r'(hesapla\w*\s*(değil|degil|istemiyorum|istemez|yapma|olmaz|gerek|yok|mi\s+değil))',
@@ -339,7 +339,7 @@ def classify_intent(text: str) -> Intent:
 
     # Calculator karar mantığı
     is_calc = (has_numbers and has_math_ops) or has_math_words or has_turkish_math_pattern or has_power_pattern or has_percentage_pattern
-    
+
     if is_calc and not _skip_calculator:
         # Negation varsa calculator'a gitme
         if has_negation_around_math:
@@ -457,7 +457,8 @@ def check_network() -> str:
     Returns:
         "online", "offline", "degraded"
     """
-    import socket, time
+    import socket
+    import time
     now = time.time()
     if _network_cache["status"] is not None and (now - _network_cache["last_check"]) < _NETWORK_CACHE_TTL:
         return _network_cache["status"]
@@ -467,7 +468,7 @@ def check_network() -> str:
         _network_cache["status"] = "online"
         _network_cache["last_check"] = now
         return "online"
-    except (socket.timeout, OSError):
+    except (TimeoutError, OSError):
         pass
 
     try:

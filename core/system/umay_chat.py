@@ -1,7 +1,7 @@
 """Legacy CLI chat kept for compatibility with older UMAY launch commands."""
-from pathlib import Path
 import sys
 from datetime import datetime
+from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
@@ -10,9 +10,9 @@ if str(ROOT / "core") not in sys.path:
     sys.path.insert(0, str(ROOT / "core"))
 
 from core.engine import chat as ollama_chat
+from core.engine import resolve_model
 from core.memory.memory_bridge import remember
 from core.memory.memory_manager import get_history, save_history
-from core.engine import resolve_model
 
 
 def build_prompt(user_message: str) -> str:

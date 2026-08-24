@@ -10,11 +10,10 @@ import hashlib
 import json
 import os
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 from pathlib import Path
 
 from core.utils.logger import log
-
 
 ROOT = Path(__file__).resolve().parents[1]
 MEMORY_DIR = ROOT / "UMAY_MEMORY"
@@ -32,7 +31,7 @@ def _hash(text: str) -> str:
 
 
 def _now() -> dict:
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     return {
         "date": now.strftime("%Y-%m-%d"),
         "time": now.strftime("%H:%M:%S"),
@@ -151,7 +150,7 @@ class ArchiveStore:
             entries_file = topic_dir / "entries.jsonl"
             if entries_file.exists():
                 try:
-                    with open(entries_file, "r", encoding="utf-8") as f:
+                    with open(entries_file, encoding="utf-8") as f:
                         for line in f:
                             try:
                                 data = json.loads(line.strip())
@@ -170,7 +169,7 @@ class ArchiveStore:
         if not path.exists():
             return entries
         try:
-            with open(path, "r", encoding="utf-8") as f:
+            with open(path, encoding="utf-8") as f:
                 for line in f:
                     try:
                         entries.append(json.loads(line.strip()))
@@ -187,7 +186,7 @@ class ArchiveStore:
             path = self._date_path(date_str)
             if path.exists():
                 try:
-                    with open(path, "r", encoding="utf-8") as f:
+                    with open(path, encoding="utf-8") as f:
                         for line in f:
                             try:
                                 entries.append(json.loads(line.strip()))
@@ -201,7 +200,7 @@ class ArchiveStore:
                 for day_file in sorted(month_dir.iterdir()):
                     if day_file.suffix == ".jsonl":
                         try:
-                            with open(day_file, "r", encoding="utf-8") as f:
+                            with open(day_file, encoding="utf-8") as f:
                                 for line in f:
                                     try:
                                         entries.append(json.loads(line.strip()))
@@ -222,7 +221,7 @@ class ArchiveStore:
             if not entries_file.exists():
                 continue
             try:
-                with open(entries_file, "r", encoding="utf-8") as f:
+                with open(entries_file, encoding="utf-8") as f:
                     for line in f:
                         try:
                             data = json.loads(line.strip())
@@ -244,7 +243,7 @@ class ArchiveStore:
             if path.exists():
                 count = 0
                 try:
-                    with open(path, "r", encoding="utf-8") as f:
+                    with open(path, encoding="utf-8") as f:
                         for line in f:
                             if line.strip():
                                 count += 1

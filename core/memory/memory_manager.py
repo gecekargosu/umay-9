@@ -14,9 +14,9 @@ def load_json(file_path, default):
         return default
 
     try:
-        with open(file_path, "r", encoding="utf-8") as f:
+        with open(file_path, encoding="utf-8") as f:
             return json.load(f)
-    except:
+    except (json.JSONDecodeError, OSError):
         return default
 
 

@@ -8,7 +8,8 @@ from __future__ import annotations
 import threading
 import time
 import uuid
-from typing import Any, Callable, Optional
+from collections.abc import Callable
+from typing import Any, Optional
 
 from core.utils.logger import log
 
@@ -47,6 +48,7 @@ class TaskExecutor:
         if execute_fn is None:
             def _default_exec(task_id, session_id, soru, attachments, *, on_status=None, on_complete=None, on_error=None):
                 import time
+
                 from core.engine import chat as _chat
                 check_cancel(task_id)
                 if on_status: on_status(task_id, "thinking", "Thinking...")

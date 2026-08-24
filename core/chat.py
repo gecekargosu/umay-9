@@ -4,6 +4,7 @@ from datetime import datetime
 from pathlib import Path
 
 from dotenv import load_dotenv
+
 load_dotenv()
 
 ROOT_PROJECT = Path(__file__).resolve().parents[1]
@@ -50,7 +51,7 @@ def load_knowledge() -> str:
 
 def load_history():
     if HISTORY_FILE.exists():
-        with open(HISTORY_FILE, "r", encoding="utf-8") as f:
+        with open(HISTORY_FILE, encoding="utf-8") as f:
             return json.load(f)
     return []
 

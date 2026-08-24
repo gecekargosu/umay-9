@@ -1,19 +1,19 @@
 """UMAY filesystem/terminal tools with a dynamically selected active workspace."""
 from __future__ import annotations
 
+import json
 import os
 import re
-import subprocess
-import json
 import shutil
+import subprocess
 import sys
-import time
 import threading
+import time
 from pathlib import Path
-from urllib.parse import quote_plus
 from typing import Any
+from urllib.parse import quote_plus
 
-from core.utils.action_logger import eylem_baslat, eylem_tamamla, eylem_hata
+from core.utils.action_logger import eylem_baslat, eylem_hata, eylem_tamamla
 from core.utils.logger import log
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -173,7 +173,7 @@ def search_files(pattern: str, path: str = ".", max_results: int = 100) -> dict[
     """
     target = _safe_path(path)
     max_results = max(1, min(int(max_results), MAX_SEARCH))
-    
+
     # Glob pattern kontrolü: * veya ? içeren pattern'leri glob olarak değerlendir
     is_glob = bool(re.search(r'[*?\[\]]', pattern))
     if is_glob:
@@ -384,7 +384,7 @@ def web_search(query: str, max_results: int = 8) -> dict[str, Any]:
     """
     max_results = max(1, min(int(max_results), 50))
     aid = eylem_baslat("web_gateway", f"Web araması: {query[:100]}", "DuckDuckGo araması", "")
-    
+
     # Yöntem 1: duckduckgo-search kütüphanesi (daha güvenilir)
     links = []
     try:
@@ -408,7 +408,7 @@ def web_search(query: str, max_results: int = 8) -> dict[str, Any]:
                 )
         except Exception as e2:
             log(f"[SEARCH] Playwright fallback de başarısız: {e2}")
-    
+
     result = {
         "query": query,
         "results": links,
@@ -481,7 +481,8 @@ def open_with_app(app_name: str, path: str) -> dict[str, Any]:
 
 def get_current_time(timezone: str = "Europe/Istanbul") -> dict[str, Any]:
     """Sistemin gerçek saatini döndür. Ollama/LLM tarafından uydurulmaz."""
-    from datetime import datetime, timezone as tz, timedelta
+    from datetime import datetime, timedelta
+    from datetime import timezone as tz
     try:
         now = datetime.now()
         return {
@@ -682,10 +683,10 @@ TOOLS.extend(TIME_TOOLS)
 
 # Document Reader import'u (opsiyonel)
 try:
+    from core.document_reader import document_to_memory as _document_to_memory
     from core.document_reader import read_document as _read_document
     from core.document_reader import scan_directory as _scan_directory
     from core.document_reader import search_in_documents as _search_in_documents
-    from core.document_reader import document_to_memory as _document_to_memory
 except ImportError:
     _read_document = None
     _scan_directory = None
@@ -733,11 +734,11 @@ def document_to_memory(path: str, source: str = "document") -> dict[str, Any]:
 
 try:
     from core.vision_reader import analyze_image as _analyze_image
-    from core.vision_reader import image_to_text as _image_to_text
+    from core.vision_reader import analyze_images_batch as _analyze_images_batch
     from core.vision_reader import describe_image as _describe_image
     from core.vision_reader import image_qa as _image_qa
     from core.vision_reader import image_to_memory as _image_to_memory
-    from core.vision_reader import analyze_images_batch as _analyze_images_batch
+    from core.vision_reader import image_to_text as _image_to_text
 except ImportError:
     _analyze_image = None
     _image_to_text = None
@@ -792,13 +793,13 @@ def analyze_images_batch(paths: list[str], question: str = "Bu gorselleri acikla
 # ─── Terminal Agent Import ─────────────────────────────────────────────────
 
 try:
-    from core.terminal_agent import run_terminal_command as _run_terminal_command
-    from core.terminal_agent import run_powershell as _run_powershell
     from core.terminal_agent import analyze_error as _analyze_error
-    from core.terminal_agent import get_system_info as _get_system_info
-    from core.terminal_agent import read_log_file as _read_log_file
-    from core.terminal_agent import list_processes as _list_processes
     from core.terminal_agent import find_process as _find_process
+    from core.terminal_agent import get_system_info as _get_system_info
+    from core.terminal_agent import list_processes as _list_processes
+    from core.terminal_agent import read_log_file as _read_log_file
+    from core.terminal_agent import run_powershell as _run_powershell
+    from core.terminal_agent import run_terminal_command as _run_terminal_command
 except ImportError:
     _run_terminal_command = None
     _run_powershell = None
@@ -861,14 +862,14 @@ def find_process(name: str) -> dict[str, Any]:
 # ─── Code Agent Import ──────────────────────────────────────────────────────
 
 try:
-    from core.code_agent import read_code as _read_code
-    from core.code_agent import generate_code as _generate_code
-    from core.code_agent import explain_code as _explain_code
-    from core.code_agent import find_bugs as _find_bugs
-    from core.code_agent import write_test as _write_test
-    from core.code_agent import run_tests as _run_tests
     from core.code_agent import analyze_project as _analyze_project_code
     from core.code_agent import code_assist as _code_assist
+    from core.code_agent import explain_code as _explain_code
+    from core.code_agent import find_bugs as _find_bugs
+    from core.code_agent import generate_code as _generate_code
+    from core.code_agent import read_code as _read_code
+    from core.code_agent import run_tests as _run_tests
+    from core.code_agent import write_test as _write_test
 except ImportError:
     _read_code = None
     _generate_code = None
@@ -1010,7 +1011,7 @@ def aider_edit(files: str, instructions: str, message: str = "") -> dict[str, An
         # pip ile kurulu olabilir
         try:
             import subprocess
-            result = subprocess.run([sys.executable, '-m', 'aider', '--version'], 
+            result = subprocess.run([sys.executable, '-m', 'aider', '--version'],
                                   capture_output=True, text=True, timeout=10)
             if result.returncode == 0:
                 aider_bin = sys.executable
@@ -1021,13 +1022,13 @@ def aider_edit(files: str, instructions: str, message: str = "") -> dict[str, An
             return {"error": "Aider kurulu degil. pip install aider-chat ile kurun.", "status": "ERROR"}
     else:
         aider_args = []
-    
+
     # Gecici dosya olustur
     import tempfile
     with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False, encoding='utf-8') as f:
         f.write(instructions)
         prompt_file = f.name
-    
+
     try:
         # Aider komutu
         cmd = [aider_bin] + aider_args
@@ -1037,18 +1038,18 @@ def aider_edit(files: str, instructions: str, message: str = "") -> dict[str, An
             cmd += ['--commit-message', message]
         cmd += ['--yes']  # Onay otomatik
         cmd += ['--no-git']  # Git commit otomatik olmasin
-        
+
         aid = eylem_baslat("aider", f"Aider edit: {files}", instructions[:100], "")
         started = time.time()
-        
+
         result = subprocess.run(
             cmd, cwd=str(ACTIVE_WORKSPACE),
             capture_output=True, text=True,
             timeout=300, encoding='utf-8', errors='replace'
         )
-        
+
         duration = time.time() - started
-        
+
         if result.returncode == 0:
             eylem_tamamla(aid, f"Aider basarili ({duration:.1f}s)", True, duration)
             return {
@@ -1107,30 +1108,30 @@ def multi_file_edit(files: str, instructions: str) -> dict[str, Any]:
     file_list = [f.strip() for f in files.split(',') if f.strip()]
     if not file_list:
         return {"error": "Dosya belirtilmedi", "status": "ERROR"}
-    
+
     aid = eylem_baslat("multi_edit", f"Coklu dosya duzenleme: {files}", instructions[:100], "")
     started = time.time()
-    
+
     results = []
     errors = []
-    
+
     for file_path in file_list:
         target = _safe_path(file_path)
         if not target.exists():
             errors.append({"file": file_path, "error": "Dosya bulunamadi"})
             continue
-        
+
         try:
             # Dosyayi oku
             old_content = target.read_text(encoding='utf-8', errors='replace')
-            
+
             # Yedek al
             backup_root = ACTIVE_WORKSPACE / BACKUP_DIR_NAME
             backup_root.mkdir(exist_ok=True)
             stamp = time.strftime("%Y%m%d_%H%M%S")
             backup_path = backup_root / f"{target.name}.{stamp}.bak"
             shutil.copy2(target, backup_path)
-            
+
             results.append({
                 "file": file_path,
                 "status": "READ_OK",
@@ -1139,14 +1140,14 @@ def multi_file_edit(files: str, instructions: str) -> dict[str, Any]:
             })
         except Exception as exc:
             errors.append({"file": file_path, "error": str(exc)})
-    
+
     duration = time.time() - started
-    
+
     if errors:
         eylem_hata(aid, f"{len(errors)} dosyada hata")
     else:
         eylem_tamamla(aid, f"{len(results)} dosya okundu", True, duration)
-    
+
     return {
         "status": "PASS" if not errors else "PARTIAL",
         "instructions": instructions,

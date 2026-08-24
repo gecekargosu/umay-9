@@ -9,8 +9,8 @@ Prevents runaway automation by limiting:
 Usage:
     from core.rate_limiter import check_rate_limit, record_usage
 """
-import time
 import threading
+import time
 from collections import defaultdict
 from dataclasses import dataclass, field
 from typing import Optional
@@ -109,7 +109,7 @@ class RateLimiter:
 
 
 # Global singleton
-_limiter: Optional[RateLimiter] = None
+_limiter: RateLimiter | None = None
 
 
 def get_rate_limiter() -> RateLimiter:

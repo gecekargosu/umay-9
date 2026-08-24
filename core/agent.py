@@ -2,23 +2,33 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 from datetime import datetime
 from pathlib import Path
 
-from core.engine import chat, resolve_model
-from core.agent_tools import TOOLS, DISPATCH, PROJECT_ROOT, set_workspace, get_workspace
-from core.utils.action_logger import eylem_baslat, eylem_tamamla, eylem_hata
-from core.task_state import start_task, checkpoint, finish_task, load_task, waiting_for_approval, resume_task
+from core.agent_tools import DISPATCH, PROJECT_ROOT, TOOLS, get_workspace, set_workspace
 from core.approval_manager import (
-    ApprovalManager, get_approval_manager, needs_approval,
-    request_approval as _request_approval, approve as _approve,
-    get_pending_approval, get_approval_by_id, TaskStatus,
+    ApprovalManager,
+    TaskStatus,
+    get_approval_by_id,
+    get_approval_manager,
+    get_pending_approval,
+    needs_approval,
 )
+from core.approval_manager import (
+    approve as _approve,
+)
+from core.approval_manager import (
+    request_approval as _request_approval,
+)
+from core.engine import chat, resolve_model
 
 # identity.py'den merkezi UMAY kimlik sistemi import ediliyor.
 # Artık agent.py'de hardcoded prompt yok — tum identity identity.py'den gelir.
-from core.identity import UMAY_SYSTEM, CHAT_IDENTITY
+from core.identity import CHAT_IDENTITY, UMAY_SYSTEM
+from core.task_state import checkpoint, finish_task, load_task, resume_task, start_task, waiting_for_approval
+from core.utils.action_logger import eylem_baslat, eylem_hata, eylem_tamamla
 
 AUDIT_DIR = PROJECT_ROOT / "logs"
 AUDIT_FILE = AUDIT_DIR / "DEVELOPMENT_LOG.md"
@@ -279,15 +289,16 @@ def run_agent(
 
     # ─── FAZ 2: Intent Router Integration ──────────────────────────────────
     is_chat = context and context.get("channel") in ("telegram", "telegram_user")
-    
+
     # Intent sınıflandırması
     Intent = None  # type: ignore
     try:
-        from core.intent_router import classify_intent, get_available_tools as intent_tools, Intent
+        from core.intent_router import Intent, classify_intent
+        from core.intent_router import get_available_tools as intent_tools
         intent = classify_intent(request)
     except (ImportError, Exception):
         intent = "chat" if is_chat else None
-    
+
     # Intent'e göre system prompt seçimi
     if is_chat:
         _chat_intents = ("chat", "knowledge") if Intent is None else (Intent.CHAT, Intent.KNOWLEDGE)
@@ -298,7 +309,7 @@ def run_agent(
             system_prompt = UMAY_SYSTEM + f"\n\nAktif workspace: {active}"
     else:
         system_prompt = UMAY_SYSTEM + f"\n\nAktif workspace: {active}"
-    
+
     # Intent'e göre tool seçimi
     intent_tools_list = None
     if is_chat:
@@ -306,7 +317,7 @@ def run_agent(
             intent_tools_list = intent_tools(intent)  # None = tool kullanma
         except Exception:
             intent_tools_list = None
-    
+
     # Intent'e göre model/ task seçimi (sadece telegram/chat kanalında)
     if is_chat and not routed_model:
         from core.router import model_sec

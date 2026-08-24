@@ -43,25 +43,25 @@ KURULUM:
 """
 from __future__ import annotations
 
-import imaplib
-import smtplib
 import email
-from email.header import decode_header
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
-from email.utils import parsedate_to_datetime
+import hashlib
+import imaplib
+import json
 import os
 import re
-import json
+import smtplib
 import time
-import hashlib
 from dataclasses import dataclass, field
 from datetime import datetime
+from email.header import decode_header
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+from email.utils import parsedate_to_datetime
 from enum import Enum
 from pathlib import Path
 from typing import Any
 
-from core.utils.action_logger import eylem_baslat, eylem_tamamla, eylem_hata
+from core.utils.action_logger import eylem_baslat, eylem_hata, eylem_tamamla
 from core.utils.logger import log
 
 # ─── Sabitler ────────────────────────────────────────────────────────────────
@@ -146,7 +146,7 @@ class CredentialManager:
 
         # .env dosyasından oku
         if env_path.exists():
-            with open(env_path, "r", encoding="utf-8") as f:
+            with open(env_path, encoding="utf-8") as f:
                 for line in f:
                     line = line.strip()
                     if line and not line.startswith("#") and "=" in line:

@@ -4,15 +4,16 @@ Flask + SocketIO ile canli browser gorunumu ve chat
 Adres: http://localhost:5001
 """
 
+import base64
 import os
 import sys
-import base64
 import threading
 import time
-from pathlib import Path
 from datetime import datetime
+from pathlib import Path
 
 from dotenv import load_dotenv
+
 load_dotenv()
 
 # Path
@@ -20,7 +21,7 @@ ROOT = Path(__file__).parent.parent
 CORE = ROOT / "core"
 sys.path.insert(0, str(CORE))
 
-from flask import Flask, render_template, request, jsonify
+from flask import Flask, jsonify, render_template, request
 from flask_socketio import SocketIO, emit
 
 app = Flask(__name__, template_folder="templates", static_folder="static")
@@ -46,11 +47,11 @@ def _resolve_host_path(path_str: str) -> str | None:
     """
     if not path_str:
         return None
-    
+
     # Block path traversal
     if ".." in path_str:
         return None
-    
+
     # Map Windows paths to container paths (dynamic username)
     _username = os.environ.get('USERNAME', os.environ.get('USER', '')).lower()
     _win_to_container = {}
@@ -67,10 +68,10 @@ def _resolve_host_path(path_str: str) -> str | None:
     _win_to_container["c:\\users\\desktop"] = "/host/Desktop"
     _win_to_container["c:\\users\\documents"] = "/host/Documents"
     _win_to_container["c:\\users\\downloads"] = "/host/Downloads"
-    
+
     # Normalize path for comparison
     path_lower = path_str.lower().replace("\\\\", "/").replace("\\", "/")
-    
+
     # Check exact mapping first
     for win_path, container_path in _win_to_container.items():
         if path_lower.startswith(win_path):
@@ -79,7 +80,7 @@ def _resolve_host_path(path_str: str) -> str | None:
             if os.path.exists(target):
                 return target
             return None
-    
+
     # Check if path starts with /host/ (already a container path)
     if path_str.startswith("/host/"):
         # Validate against allowed roots
@@ -89,7 +90,7 @@ def _resolve_host_path(path_str: str) -> str | None:
                     return path_str
                 return None
         return None
-    
+
     # Not a host path — return as-is (local container path)
     return path_str
 
@@ -105,7 +106,8 @@ _browser_lock = threading.Lock()
 # STEP-01. The three helper functions below keep their original signatures
 # and behavior on purpose so nothing else in this file has to change.
 from core import conversation_store as _conv_store
-from core.task_executor import get_executor, check_pause, check_cancel, TaskCancelledException
+from core.task_executor import TaskCancelledException, check_cancel, check_pause, get_executor
+
 _MAX_HISTORY = 20  # max mesaj çifti (40 mesaj) — same window as before
 
 # Image store — hash -> base64 (for vision requests)
@@ -135,11 +137,11 @@ def _resolve_image_base64(att: dict) -> str | None:
     """
     import base64 as _b64
     file_hash = att.get("hash", "")
-    
+
     # Fast path: in-memory store
     if file_hash and file_hash in _image_store:
         return _image_store[file_hash]
-    
+
     # Fallback: search uploads directory
     filename = att.get("filename", "")
     uploads_dir = ROOT / "uploads"
@@ -155,7 +157,7 @@ def _resolve_image_base64(att: dict) -> str | None:
                             return b64
                         except Exception:
                             pass
-    
+
     return None
 
 
@@ -206,7 +208,7 @@ def log_gonder_dongu():
             if log_dosya.exists():
                 boyut = log_dosya.stat().st_size
                 if boyut > son_boyut:
-                    with open(log_dosya, "r", encoding="utf-8", errors="replace") as f:
+                    with open(log_dosya, encoding="utf-8", errors="replace") as f:
                         f.seek(son_boyut)
                         yeni = f.read()
                     if yeni.strip():
@@ -522,7 +524,8 @@ def _format_tool_result(last_result, tool_name=None):
         if not raw:
             return "Surec listesi bos."
         try:
-            import csv as _csv, io as _io
+            import csv as _csv
+            import io as _io
             reader = _csv.reader(_io.StringIO(raw))
             rows = list(reader)
             if rows and len(rows[0]) >= 3:
@@ -618,19 +621,24 @@ def execute_chat_task(task_id, session_id, soru, attachments, *, on_status=None,
 
     Called by TaskExecutor.submit() in a background thread.
     """
-    from core.engine import chat as umay_chat, resolve_model
-    from core.router import model_sec
-    from core.agent_tools import TOOLS, DISPATCH
     from core.agent import (
-        _parse_tool_calls, _assistant_tool_message,
-        _tool_messages, _bounded_tool_result,
+        _assistant_tool_message,
+        _bounded_tool_result,
+        _parse_tool_calls,
+        _tool_messages,
     )
-    from core.identity import UMAY_SYSTEM as _UMAY_SYSTEM, CHAT_IDENTITY as _CHAT_IDENTITY
+    from core.agent_tools import DISPATCH, TOOLS
+    from core.engine import chat as umay_chat
+    from core.engine import resolve_model
+    from core.identity import CHAT_IDENTITY as _CHAT_IDENTITY
+    from core.identity import UMAY_SYSTEM as _UMAY_SYSTEM
+    from core.router import model_sec
     from core.utils.logger import log
 
     # ── Intent Router entegrasyonu ──────────────────────────────────────
     try:
-        from core.intent_router import classify_intent, get_available_tools as _intent_tools, Intent
+        from core.intent_router import Intent, classify_intent
+        from core.intent_router import get_available_tools as _intent_tools
         _intent = classify_intent(soru)
         _intent_tools_list = _intent_tools(_intent)
     except ImportError:
@@ -1110,7 +1118,8 @@ def execute_chat_task(task_id, session_id, soru, attachments, *, on_status=None,
                         _raw = r.get("output", "").strip()
                         _formatted = False
                         try:
-                            import csv as _csv2, io as _io2
+                            import csv as _csv2
+                            import io as _io2
                             _reader = _csv2.reader(_io2.StringIO(_raw))
                             _rows = list(_reader)
                             if _rows and len(_rows[0]) >= 3:
@@ -1163,7 +1172,7 @@ def execute_chat_task(task_id, session_id, soru, attachments, *, on_status=None,
                 if on_complete:
                     on_complete(task_id, resp_data)
                 return
-        except Exception as direct_exc:
+        except Exception:
             # Fall through to normal LLM path
             pass
 
@@ -1180,7 +1189,7 @@ def execute_chat_task(task_id, session_id, soru, attachments, *, on_status=None,
     ]
 
     # STEP-04.3: Pre-flight token budget check
-    from core.token_budget import estimate_usage, check_budget
+    from core.token_budget import check_budget, estimate_usage
     preflight_usage = estimate_usage(messages)
     preflight_check = check_budget(preflight_usage)
     if preflight_check.status != "OK":
@@ -1218,6 +1227,7 @@ def execute_chat_task(task_id, session_id, soru, attachments, *, on_status=None,
         t_model_start = time.time()
         try:
             import requests as _req
+
             from core.engine import OLLAMA_URL
 
             # STEP-04.5 fix: use att_context (not raw soru)
@@ -1398,7 +1408,7 @@ def execute_chat_task(task_id, session_id, soru, attachments, *, on_status=None,
         messages[-1] = {"role": "user", "content": user_content}
 
         # STEP-04.6: Wrap model call with failure recovery
-        from core.failure_recovery import with_recovery, graceful_error_response
+        from core.failure_recovery import graceful_error_response, with_recovery
         recovery = with_recovery(umay_chat, messages, model=model)
         t_model_done = time.time()
 
@@ -1624,8 +1634,9 @@ def chat_task_cancel(task_id):
 @app.route("/api/system")
 def system_status():
     """System status endpoint — CPU, RAM, Docker, Ollama, etc."""
-    import psutil
     import subprocess
+
+    import psutil
     result = {
         "cpu_percent": psutil.cpu_percent(interval=0.1),
         "ram_percent": psutil.virtual_memory().percent,
@@ -1637,8 +1648,9 @@ def system_status():
     }
     # Ollama
     try:
-        from core.engine import OLLAMA_URL
         import requests as _req
+
+        from core.engine import OLLAMA_URL
         r = _req.get(f"{OLLAMA_URL}/api/tags", timeout=3)
         if r.ok:
             models = [m["name"] for m in r.json().get("models", [])]
@@ -1754,7 +1766,7 @@ def logs_api():
     lines = []
     try:
         if log_file.exists():
-            with open(log_file, "r", encoding="utf-8", errors="replace") as f:
+            with open(log_file, encoding="utf-8", errors="replace") as f:
                 all_lines = f.readlines()
                 lines = [l.rstrip() for l in all_lines[-50:]]
     except Exception:
@@ -1790,8 +1802,9 @@ def config_api():
 def models_api():
     """List available models with capabilities for model selector."""
     try:
-        from core.engine import installed_models, MODEL_PREFERENCES, OLLAMA_URL
         import requests as _req
+
+        from core.engine import MODEL_PREFERENCES, OLLAMA_URL, installed_models
         models = installed_models()
         # Categorize models
         categorized = {
@@ -1881,8 +1894,9 @@ def diagnostics():
         checks.append({"name": "Tool Registry", "status": "FAIL", "detail": str(e)[:100]})
     # 4. Ollama
     try:
-        from core.engine import OLLAMA_URL
         import requests as _req
+
+        from core.engine import OLLAMA_URL
         r = _req.get(f"{OLLAMA_URL}/api/tags", timeout=5)
         models = [m["name"] for m in r.json().get("models", [])] if r.ok else []
         checks.append({"name": "Ollama", "status": "PASS" if r.ok else "FAIL", "detail": f"{len(models)} models"})
@@ -2128,9 +2142,9 @@ if __name__ == "__main__":
         from core.telegram_adapter import get_telegram_adapter, is_telegram_configured
         if is_telegram_configured():
             tg = get_telegram_adapter()
+            from core import agent as agent_module
             from core.approval_manager import get_approval_manager
             from core.communication_manager import get_communication_manager
-            from core import agent as agent_module
             tg.set_approval_manager(get_approval_manager())
             tg.set_communication_manager(get_communication_manager())
             tg.set_agent_module(agent_module)
@@ -2144,9 +2158,9 @@ if __name__ == "__main__":
         from core.telegram_user_adapter import get_telegram_user_adapter
         user_tg = get_telegram_user_adapter()
         if user_tg.is_configured():
+            from core import agent as agent_module
             from core.approval_manager import get_approval_manager
             from core.communication_manager import get_communication_manager
-            from core import agent as agent_module
             user_tg.set_approval_manager(get_approval_manager())
             user_tg.set_communication_manager(get_communication_manager())
             user_tg.set_agent_module(agent_module)
@@ -2162,8 +2176,8 @@ if __name__ == "__main__":
 
     # Background Worker & Scheduler
     try:
-        from core.worker import start_worker
         from core.scheduler import start_scheduler
+        from core.worker import start_worker
         start_worker()
         start_scheduler()
         print(" Background Worker: BAŞLATILDI")

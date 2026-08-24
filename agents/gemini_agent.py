@@ -3,6 +3,7 @@
 UMAY core does not depend on Gemini; Ollama remains the default local engine.
 """
 import os
+
 from dotenv import load_dotenv
 
 load_dotenv()

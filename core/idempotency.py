@@ -14,8 +14,8 @@ Usage:
     # After successful send
     register_operation(op_key)
 """
-import time
 import threading
+import time
 from typing import Optional
 
 
@@ -71,7 +71,7 @@ class IdempotencyGuard:
 
 
 # Global singleton
-_guard: Optional[IdempotencyGuard] = None
+_guard: IdempotencyGuard | None = None
 
 
 def get_idempotency_guard() -> IdempotencyGuard:

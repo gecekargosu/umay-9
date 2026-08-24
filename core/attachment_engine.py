@@ -337,8 +337,9 @@ def process_upload(file_data: bytes, filename: str, source: str = "chat") -> dic
 
     # Save file physically
     try:
-        from core.file_manager import save_upload
         import io as _io
+
+        from core.file_manager import save_upload
         stream = _io.BytesIO(file_data)
         save_result = save_upload(stream, filename, source=source)
         result["saved_path"] = save_result.get("path", "")

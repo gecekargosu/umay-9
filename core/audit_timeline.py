@@ -11,9 +11,9 @@ Usage:
 import json
 import os
 import time
+from datetime import UTC
 from pathlib import Path
 from typing import Optional
-
 
 LOGS_DIR = Path(os.getenv("UMAY_LOGS_DIR", "logs"))
 
@@ -24,7 +24,7 @@ def _read_jsonl(filepath: Path) -> list[dict]:
     if not filepath.exists():
         return entries
     try:
-        with open(filepath, "r", encoding="utf-8") as f:
+        with open(filepath, encoding="utf-8") as f:
             for line in f:
                 line = line.strip()
                 if line:
@@ -38,8 +38,8 @@ def _read_jsonl(filepath: Path) -> list[dict]:
 
 
 def get_timeline(
-    task_id: Optional[str] = None,
-    since: Optional[float] = None,
+    task_id: str | None = None,
+    since: float | None = None,
     limit: int = 50,
 ) -> list[dict]:
     """Get audit events as a timeline.
@@ -53,7 +53,7 @@ def get_timeline(
         List of event dicts sorted by time
     """
     events = []
-    
+
     # Read from actions log
     actions_file = LOGS_DIR / "actions.jsonl"
     for entry in _read_jsonl(actions_file):
@@ -66,7 +66,7 @@ def get_timeline(
             "detail": entry.get("detail", entry.get("message", "")),
             "source": "actions",
         })
-    
+
     # Read from tasks log
     tasks_file = LOGS_DIR / "tasks.jsonl"
     for entry in _read_jsonl(tasks_file):
@@ -79,7 +79,7 @@ def get_timeline(
             "detail": entry.get("detail", entry.get("result", "")),
             "source": "tasks",
         })
-    
+
     # Read from approvals log
     approvals_file = LOGS_DIR / "approvals.jsonl"
     for entry in _read_jsonl(approvals_file):
@@ -92,16 +92,16 @@ def get_timeline(
             "detail": entry.get("message", ""),
             "source": "approvals",
         })
-    
+
     # Filter
     if task_id:
         events = [e for e in events if e["task_id"] == task_id]
     if since:
         events = [e for e in events if e["time"] >= since]
-    
+
     # Sort by time
     events.sort(key=lambda e: e.get("time", 0))
-    
+
     # Limit
     return events[-limit:]
 
@@ -110,30 +110,30 @@ def format_timeline(events: list[dict]) -> str:
     """Format timeline events as human-readable text."""
     if not events:
         return "No events found."
-    
+
     lines = ["=== UMAY AUDIT TIMELINE ===", ""]
-    
+
     for event in events:
         ts = event.get("time", 0)
         if ts:
             # Convert to readable time
             try:
                 from datetime import datetime, timezone
-                dt = datetime.fromtimestamp(ts, tz=timezone.utc)
+                dt = datetime.fromtimestamp(ts, tz=UTC)
                 time_str = dt.strftime("%H:%M:%S")
             except Exception:
                 time_str = str(int(ts))
         else:
             time_str = "??:??:??"
-        
+
         action = event.get("action", "?")
         status = event.get("status", "")
         detail = event.get("detail", "")
         tool = event.get("tool", "")
-        
+
         # Build line
         parts = [f"  [{time_str}]"]
-        
+
         # Status icon
         if status in ("COMPLETED", "approved", "OK", "PASS"):
             parts.append("[OK]")
@@ -143,25 +143,25 @@ def format_timeline(events: list[dict]) -> str:
             parts.append("[..]")
         else:
             parts.append("[--]")
-        
+
         parts.append(action)
         if tool:
             parts.append(f"({tool})")
         if detail:
             parts.append(f"- {detail[:80]}")
-        
+
         lines.append(" ".join(parts))
-    
+
     lines.append("")
     lines.append(f"Total: {len(events)} events")
-    
+
     return "\n".join(lines)
 
 
 def get_task_summary(task_id: str) -> dict:
     """Get a summary for a specific task."""
     events = get_timeline(task_id=task_id, limit=100)
-    
+
     return {
         "task_id": task_id,
         "total_events": len(events),

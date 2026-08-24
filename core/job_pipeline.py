@@ -22,7 +22,6 @@ from typing import Any
 
 from core.utils.logger import log
 
-
 ROOT = Path(__file__).resolve().parents[1]
 PROFILES_DIR = ROOT / "profiles"
 PROFILES_DIR.mkdir(parents=True, exist_ok=True)
@@ -93,7 +92,7 @@ def load_user_profile() -> dict:
     if not profile_path.exists():
         return {}
     try:
-        with open(profile_path, "r", encoding="utf-8") as f:
+        with open(profile_path, encoding="utf-8") as f:
             return json.load(f)
     except Exception:
         return {}

@@ -10,7 +10,7 @@ def load_config():
     if not CONFIG_FILE.exists():
         return {}
 
-    with open(CONFIG_FILE, "r", encoding="utf-8") as f:
+    with open(CONFIG_FILE, encoding="utf-8") as f:
         return json.load(f)
 
 

@@ -9,11 +9,11 @@ from __future__ import annotations
 import json
 import time
 import uuid
-from dataclasses import dataclass, asdict
+from collections.abc import Callable
+from dataclasses import asdict, dataclass
 from enum import Enum
 from pathlib import Path
-from typing import Any, Callable, Optional
-
+from typing import Any, Optional
 
 # ─── Constants ──────────────────────────────────────────────────────────────
 

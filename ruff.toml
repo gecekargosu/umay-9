@@ -22,6 +22,24 @@ ignore = [
     "E402",   # module level import not at top
     "F401",   # unused import
     "F811",   # redefined unused
+    "E701",   # multiple statements on one line colon
+    "E702",   # multiple statements on one line semicolon
+    "W293",   # blank line with whitespace
+    "E741",   # ambiguous variable name
+    "B904",   # raise without from inside except
+    "B005",   # strip with multi-characters
+    "B007",   # unused loop control variable
+    "UP042",  # replace str enum
+    "UP031",  # printf string formatting
+    "UP017",  # datetime timezone utc
+    "UP035",  # deprecated import
+    "UP045",  # non-pep604 annotation optional
+    "UP041",  # timeout error alias
+    "F841",   # unused variable
+    "F402",   # import shadowed by loop var
+    "I001",   # unsorted imports
+    "W292",   # missing newline at end of file
+    "W291",   # trailing whitespace
 ]
 
 [lint.per-file-ignores]

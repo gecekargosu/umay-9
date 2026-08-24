@@ -1,8 +1,9 @@
 import subprocess
-import requests
 import sys
-from pathlib import Path
 from datetime import datetime
+from pathlib import Path
+
+import requests
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -10,7 +11,7 @@ sys.path.append(str(ROOT))
 
 try:
     from core.memory.memory_bridge import remember
-    from core.memory.memory_manager import save_history, get_history
+    from core.memory.memory_manager import get_history, save_history
 except ImportError as e:
     print(f"[UMAY] Legacy chat modülü eksik bağımlılık: {e}")
     def remember(_text): return ""

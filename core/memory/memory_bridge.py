@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from core.utils.logger import log
 from core.memory.memory_manager import get_history, get_status, get_todo, save_status
-from rag.memory_manager import search_memory, add_memory
+from core.utils.logger import log
+from rag.memory_manager import add_memory, search_memory
 
 
 def remember(query: str) -> dict:

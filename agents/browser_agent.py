@@ -4,17 +4,17 @@ Playwright tabanli web otomasyon ajani.
 Sitelere gider, form doldurur, analiz yapar, screenshot alir.
 """
 
+import base64
 import os
 import sys
 import time
-import base64
-from pathlib import Path
 from datetime import datetime
+from pathlib import Path
 
 CORE = os.path.join(os.path.dirname(os.path.dirname(__file__)), "core")
 sys.path.insert(0, CORE)
 
-from utils.action_logger import eylem_baslat, eylem_tamamla, eylem_hata
+from utils.action_logger import eylem_baslat, eylem_hata, eylem_tamamla
 from utils.logger import log
 
 AJAN_ADI = "browser_agent"
@@ -284,28 +284,28 @@ class BrowserAgent:
             self._bekle(2)
             self.ekran_al()
             return True
-        except Exception as e:
+        except Exception:
             return False
 
     def sayfa_metni(self) -> str:
         """Sayfanin tum metnini dondurur."""
         try:
             return self.sayfa.inner_text("body")[:5000]
-        except:
+        except Exception:
             return ""
 
     def sayfa_html(self) -> str:
         """Sayfanin HTML kodunu dondurur."""
         try:
             return self.sayfa.content()[:8000]
-        except:
+        except Exception:
             return ""
 
     def sayfa_baslik(self) -> str:
         """Sayfa basligini dondurur."""
         try:
             return self.sayfa.title()
-        except:
+        except Exception:
             return ""
 
     def dosya_yukle(self, secici: str, dosya_yolu: str) -> bool:
@@ -326,7 +326,7 @@ class BrowserAgent:
         try:
             self.sayfa.wait_for_selector(secici, timeout=timeout * 1000)
             return True
-        except:
+        except Exception:
             return False
 
     def dropdown_sec(self, secici: str, deger: str) -> bool:

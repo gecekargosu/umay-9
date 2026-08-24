@@ -22,7 +22,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-from core.utils.action_logger import eylem_baslat, eylem_tamamla, eylem_hata
+from core.utils.action_logger import eylem_baslat, eylem_hata, eylem_tamamla
 
 # ─── Desteklenen Formatlar ───────────────────────────────────────────────────
 
@@ -295,11 +295,11 @@ def read_csv(file_path: Path, max_rows: int = MAX_CSV_ROWS, encoding: str | None
 
         # Encoding'i test et
         try:
-            with open(file_path, "r", encoding=encoding) as f:
+            with open(file_path, encoding=encoding) as f:
                 sample = f.read(5_000)
         except UnicodeDecodeError:
             encoding = "utf-8"
-            with open(file_path, "r", encoding=encoding, errors="replace") as f:
+            with open(file_path, encoding=encoding, errors="replace") as f:
                 sample = f.read(5_000)
 
         # Delimiter'ı tespit et
@@ -311,7 +311,7 @@ def read_csv(file_path: Path, max_rows: int = MAX_CSV_ROWS, encoding: str | None
             delimiter = ","
 
         # CSV'yi oku
-        with open(file_path, "r", encoding=encoding, errors="replace") as f:
+        with open(file_path, encoding=encoding, errors="replace") as f:
             reader = csv.reader(f, delimiter=delimiter)
             for i, row in enumerate(reader):
                 if i >= max_rows:

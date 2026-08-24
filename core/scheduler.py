@@ -7,13 +7,12 @@ from __future__ import annotations
 
 import json
 import os
-import time
 import threading
-from datetime import datetime, timezone, timedelta
-from typing import Callable
+import time
+from collections.abc import Callable
+from datetime import UTC, datetime, timedelta, timezone
 
 from core.utils.logger import log
-
 
 SCHEDULER_STATE_FILE = os.path.join(
     os.path.dirname(os.path.dirname(__file__)), "logs", "scheduler_state.json"
@@ -54,7 +53,7 @@ class ScheduledTask:
 
         if interval_seconds and not run_at:
             self.next_run = (
-                datetime.now(timezone.utc) + timedelta(seconds=interval_seconds)
+                datetime.now(UTC) + timedelta(seconds=interval_seconds)
             ).isoformat()
 
     def to_dict(self) -> dict:
@@ -186,14 +185,14 @@ class Scheduler:
                 func(**task.payload)
             else:
                 func()
-            now = datetime.now(timezone.utc).isoformat()
+            now = datetime.now(UTC).isoformat()
             task.last_run = now
             task.run_count += 1
             if task.one_time:
                 task.enabled = False
             elif task.interval_seconds:
                 task.next_run = (
-                    datetime.now(timezone.utc) + timedelta(seconds=task.interval_seconds)
+                    datetime.now(UTC) + timedelta(seconds=task.interval_seconds)
                 ).isoformat()
             log(f"[SCHEDULER] Completed: {task.name}")
         except Exception as exc:
@@ -207,7 +206,7 @@ class Scheduler:
         """Main scheduler loop."""
         log("[SCHEDULER] Scheduler started")
         while self._running:
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             with self._lock:
                 tasks_snapshot = list(self._tasks.values())
 
@@ -260,7 +259,7 @@ class Scheduler:
         if not os.path.exists(SCHEDULER_STATE_FILE):
             return
         try:
-            with open(SCHEDULER_STATE_FILE, "r", encoding="utf-8") as f:
+            with open(SCHEDULER_STATE_FILE, encoding="utf-8") as f:
                 state = json.load(f)
             for tid, data in state.items():
                 self._tasks[tid] = ScheduledTask.from_dict(data)

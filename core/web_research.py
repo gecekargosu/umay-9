@@ -26,8 +26,8 @@ Mimari:
 """
 from __future__ import annotations
 
-import json
 import hashlib
+import json
 import re
 import time
 import uuid
@@ -36,9 +36,9 @@ from datetime import datetime
 from enum import Enum
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlparse, urljoin, quote_plus
+from urllib.parse import quote_plus, urljoin, urlparse
 
-from core.utils.action_logger import eylem_baslat, eylem_tamamla, eylem_hata
+from core.utils.action_logger import eylem_baslat, eylem_hata, eylem_tamamla
 from core.utils.logger import log
 
 # ─── Sabitler ────────────────────────────────────────────────────────────────
@@ -753,7 +753,7 @@ class ResearchMemoryStore:
         """Araştırma sonucunu Memory/RAG'a kaydet."""
         try:
             # ChromaDB'ye kaydet
-            from rag.chroma_manager import get_collection, add_to_memory
+            from rag.chroma_manager import add_to_memory, get_collection
 
             collection = get_collection("research")
 
@@ -976,7 +976,7 @@ def fast_research(topic: str, max_results: int = 5) -> dict[str, Any]:
         from core.agent_tools import web_search as _ws
         result = _ws(topic, max_results=max_results)
         links = result.get("results", [])
-        
+
         if not links:
             return {
                 "topic": topic,
@@ -985,7 +985,7 @@ def fast_research(topic: str, max_results: int = 5) -> dict[str, Any]:
                 "sources": [],
                 "findings_count": 0,
             }
-        
+
         # Basit rapor oluştur
         report_lines = [f"Araştırma Konusu: {topic}", "", "Bulunan Kaynaklar:"]
         sources = []
@@ -996,10 +996,10 @@ def fast_research(topic: str, max_results: int = 5) -> dict[str, Any]:
             if url:
                 report_lines.append(f"   {url}")
             sources.append({"title": title, "url": url})
-        
+
         report_text = "\n".join(report_lines)
         log(f"[WEB_RESEARCH] Hızlı araştırma tamamlandı: {len(links)} sonuç")
-        
+
         return {
             "topic": topic,
             "status": "completed",

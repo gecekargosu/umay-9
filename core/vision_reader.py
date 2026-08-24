@@ -19,7 +19,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-from core.utils.action_logger import eylem_baslat, eylem_tamamla, eylem_hata
+from core.utils.action_logger import eylem_baslat, eylem_hata, eylem_tamamla
 
 # ─── Desteklenen Formatlar ───────────────────────────────────────────────────
 

@@ -6,9 +6,10 @@ Main agent delegates tasks to specialist sub-agents and validates results.
 from __future__ import annotations
 
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Callable, Any
+from typing import Any
 
 from core.utils.logger import log
 

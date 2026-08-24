@@ -5,13 +5,14 @@ Designed to work inside Docker container with proper lifecycle management.
 """
 from __future__ import annotations
 
+import json
 import os
 import sys
-import time
 import threading
-import json
-from datetime import datetime, timezone
-from typing import Callable, Any
+import time
+from collections.abc import Callable
+from datetime import UTC, datetime, timezone
+from typing import Any
 
 from core.utils.logger import log
 
@@ -23,7 +24,7 @@ class Event:
         self.type = event_type
         self.data = data or {}
         self.source = source
-        self.timestamp = datetime.now(timezone.utc).isoformat()
+        self.timestamp = datetime.now(UTC).isoformat()
         self.processed = False
 
     def to_dict(self) -> dict:

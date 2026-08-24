@@ -12,8 +12,8 @@ import time
 
 import requests
 
+from core.utils.action_logger import eylem_baslat, eylem_hata, eylem_tamamla
 from core.utils.logger import log
-from core.utils.action_logger import eylem_baslat, eylem_tamamla, eylem_hata
 
 # ---------------------------------------------------------------------------
 # Ollama URL resolution (backward compatible)
@@ -175,9 +175,9 @@ def _get_provider_and_model(task: str, requested_model: str | None = None, mode:
     5. Ollama (default fallback)
     """
     from core.model_providers import (
+        OllamaProvider,
         get_primary_provider,
         get_provider,
-        OllamaProvider,
     )
 
     # MODE-AWARE routing

@@ -14,7 +14,6 @@ from typing import BinaryIO
 
 from core.utils.logger import log
 
-
 # Configuration
 ROOT = Path(__file__).resolve().parents[1]
 UPLOAD_DIR = ROOT / "uploads"

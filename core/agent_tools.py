@@ -530,6 +530,79 @@ _SAFE_OPS = {
 }
 
 
+# ─── Post-it Tools ───────────────────────────────────────────────
+
+def create_postit_tool(title: str = "", content: str = "", color: str = "#FEF08A") -> dict:
+    """Yeni bir Post-it notu oluştur."""
+    try:
+        from core.postit_store import create_postit
+        postit = create_postit(title=title, content=content, color=color)
+        return {"status": "OK", "postit": postit}
+    except Exception as exc:
+        return {"status": "ERROR", "error": str(exc)}
+
+
+def list_postits_tool(filter: str = "all") -> dict:
+    """Post-it notlarını listele. filter: all|visible|hidden."""
+    try:
+        from core.postit_store import list_postits, get_stats
+        visible_only = filter == "visible"
+        postits = list_postits(visible_only=visible_only)
+        stats = get_stats()
+        return {"status": "OK", "postits": postits, "stats": stats}
+    except Exception as exc:
+        return {"status": "ERROR", "error": str(exc)}
+
+
+def update_postit_tool(postit_id: str, **kwargs) -> dict:
+    """Post-it güncelle."""
+    try:
+        from core.postit_store import update_postit
+        postit = update_postit(postit_id, **kwargs)
+        if not postit:
+            return {"status": "ERROR", "error": "Post-it not found"}
+        return {"status": "OK", "postit": postit}
+    except Exception as exc:
+        return {"status": "ERROR", "error": str(exc)}
+
+
+def delete_postit_tool(postit_id: str) -> dict:
+    """Post-it sil."""
+    try:
+        from core.postit_store import delete_postit
+        deleted = delete_postit(postit_id)
+        return {"status": "OK" if deleted else "ERROR", "deleted": deleted}
+    except Exception as exc:
+        return {"status": "ERROR", "error": str(exc)}
+
+
+def search_postits_tool(query: str) -> dict:
+    """Post-it ara."""
+    try:
+        from core.postit_store import search_postits
+        postits = search_postits(query)
+        return {"status": "OK", "postits": postits}
+    except Exception as exc:
+        return {"status": "ERROR", "error": str(exc)}
+
+
+def remember_postit_tool(postit_id: str) -> dict:
+    """Post-it içeriğini UMAY hafızasına kaydet."""
+    try:
+        from core.postit_store import get_postit, update_postit
+        from core.memory.memory_bridge import learn
+        postit = get_postit(postit_id)
+        if not postit:
+            return {"status": "ERROR", "error": "Post-it not found"}
+        fact = f"[Post-it] {postit['title']}: {postit['content']}"
+        added = learn(fact, source="postit")
+        if added:
+            update_postit(postit_id, memory_id=fact[:50])
+        return {"status": "OK", "saved": added, "fact": fact[:100]}
+    except Exception as exc:
+        return {"status": "ERROR", "error": str(exc)}
+
+
 def evaluate_expression(expression: str) -> dict[str, Any]:
     """Matematiksel ifadeyi güvenli şekilde değerlendir. LLM kullanmadan doğrudan hesapla."""
     try:
@@ -1179,6 +1252,54 @@ TOOLS.extend(MULTI_EDIT_TOOLS)
 TOOLS.extend(CODE_TOOLS)
 
 
+# ─── Post-it Tool Definitions ─────────────────────────────────────────────
+POSTIT_TOOLS = [
+    {"type": "function", "function": {
+        "name": "create_postit",
+        "description": "Yeni bir Post-it notu olustur. Masaustunde gorunen yapiskan not.",
+        "parameters": {"type": "object", "properties": {
+            "title": {"type": "string", "description": "Not basligi"},
+            "content": {"type": "string", "description": "Not icerigi"},
+            "color": {"type": "string", "description": "Arkaplan rengi (hex)"}
+        }, "required": ["content"]}}},
+    {"type": "function", "function": {
+        "name": "list_postits",
+        "description": "Post-it notlarini listele.",
+        "parameters": {"type": "object", "properties": {
+            "filter": {"type": "string", "description": "all|visible|hidden", "enum": ["all", "visible", "hidden"]}
+        }}}},
+    {"type": "function", "function": {
+        "name": "update_postit",
+        "description": "Post-it guncelle.",
+        "parameters": {"type": "object", "properties": {
+            "postit_id": {"type": "string"},
+            "title": {"type": "string"},
+            "content": {"type": "string"},
+            "color": {"type": "string"}
+        }, "required": ["postit_id"]}}},
+    {"type": "function", "function": {
+        "name": "delete_postit",
+        "description": "Post-it sil.",
+        "parameters": {"type": "object", "properties": {
+            "postit_id": {"type": "string"}
+        }, "required": ["postit_id"]}}},
+    {"type": "function", "function": {
+        "name": "search_postits",
+        "description": "Post-it icinde ara.",
+        "parameters": {"type": "object", "properties": {
+            "query": {"type": "string"}
+        }, "required": ["query"]}}},
+    {"type": "function", "function": {
+        "name": "remember_postit",
+        "description": "Post-it icerigini UMAY hafizasina kaydet.",
+        "parameters": {"type": "object", "properties": {
+            "postit_id": {"type": "string"}
+        }, "required": ["postit_id"]}}},
+]
+
+TOOLS.extend(POSTIT_TOOLS)
+
+
 # ─── Terminal Tool Definitions ─────────────────────────────────────────────
 TERMINAL_TOOLS = [
     {"type": "function", "function": {
@@ -1523,4 +1644,7 @@ DISPATCH = {
     "evaluate_expression": evaluate_expression,
     "get_current_time": get_current_time, "get_current_date": get_current_date,
     "aider_edit": aider_edit, "multi_file_edit": multi_file_edit,
+    "create_postit": create_postit_tool, "list_postits": list_postits_tool,
+    "update_postit": update_postit_tool, "delete_postit": delete_postit_tool,
+    "search_postits": search_postits_tool, "remember_postit": remember_postit_tool,
 }

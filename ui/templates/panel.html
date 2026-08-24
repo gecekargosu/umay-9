@@ -267,6 +267,7 @@ body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Robo
         <div class="nav-group-label">Workspace</div>
         <div class="nav-item" onclick="showPage('files')"><span class="icon">📁</span>Files</div>
         <div class="nav-item" onclick="showPage('memory')"><span class="icon">🧠</span>Memory</div>
+        <div class="nav-item" onclick="showPage('postits')"><span class="icon">📌</span>Post-it<span class="badge" id="postit-count">0</span></div>
       </div>
       <div class="nav-group">
         <div class="nav-group-label">Online</div>
@@ -466,6 +467,17 @@ body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Robo
           <div class="card-header"><span class="card-title">Recent Memories</span></div>
           <div id="memory-list"></div>
         </div>
+      </div>
+
+      <!-- POST-ITS -->
+      <div class="page" id="page-postits">
+        <div class="page-title">📌 Post-it Notları</div>
+        <div class="grid grid-3" style="margin-bottom:12px" id="postit-stats"></div>
+        <div style="display:flex;gap:8px;margin-bottom:12px">
+          <button onclick="createNewPostit()" style="background:var(--accent);color:white;border:none;border-radius:var(--radius-sm);padding:6px 14px;font-size:11px;font-weight:600;cursor:pointer">+ Yeni Post-it</button>
+          <input type="text" id="postit-search" placeholder="Post-it ara..." onkeyup="searchPostits()" style="flex:1;background:var(--bg-secondary);border:1px solid var(--border);border-radius:var(--radius-sm);padding:6px 10px;color:var(--text-primary);font-size:12px">
+        </div>
+        <div id="postit-list"></div>
       </div>
 
       <!-- BROWSER -->
@@ -958,6 +970,7 @@ async function loadPageData(page) {
     case 'agents': loadAgents(); break;
     case 'tools': loadTools(); break;
     case 'memory': loadMemory(); break;
+    case 'postits': loadPostits(); break;
     case 'files': loadFiles(); break;
     case 'scheduler': loadScheduler(); break;
     case 'comms': loadComms(); break;
@@ -1002,6 +1015,87 @@ async function loadMemory() {
       {label:'Memories', value: d.stats?.recall_count || 0, color: 'var(--accent)'},
     ].map(s => `<div class="card stat-card"><div class="stat-label">${s.label}</div><div class="stat-value" style="color:${s.color}">${s.value}</div></div>`).join('');
     document.getElementById('memory-list').innerHTML = (d.memories || []).map(m => `<div style="padding:5px 0;border-bottom:1px solid var(--border);font-size:10px;color:var(--text-secondary)">${escHtml(m)}</div>`).join('') || '<div class="empty-state"><div class="text">No memories found</div></div>';
+  }
+}
+
+// ─── Post-its ───
+async function loadPostits() {
+  const d = await api('/api/postits');
+  if (d) {
+    const stats = d.stats || {};
+    document.getElementById('postit-count').textContent = stats.visible || 0;
+    document.getElementById('postit-stats').innerHTML = [
+      {label:'Total', value: stats.total || 0, color:'var(--accent)'},
+      {label:'Visible', value: stats.visible || 0, color:'var(--green)'},
+      {label:'Pinned', value: stats.pinned || 0, color:'var(--cyan)'},
+    ].map(s => `<div class="card stat-card"><div class="stat-label">${s.label}</div><div class="stat-value" style="color:${s.color}">${s.value}</div></div>`).join('');
+    const postits = d.postits || [];
+    document.getElementById('postit-list').innerHTML = postits.length ? postits.map(p => `
+      <div class="card" style="margin-bottom:8px;cursor:pointer;border-left:3px solid ${p.color || '#FEF08A'}" onclick="editPostit('${p.id}')">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <div>
+            <div style="font-weight:600;font-size:12px;color:var(--text-primary)">${escHtml(p.title || 'Untitled')}</div>
+            <div style="font-size:10px;color:var(--text-secondary);margin-top:2px;max-height:40px;overflow:hidden">${escHtml((p.content || '').substring(0, 120))}</div>
+          </div>
+          <div style="display:flex;gap:4px">
+            <button onclick="event.stopPropagation();togglePin('${p.id}')" title="Pin" style="background:none;border:none;cursor:pointer;font-size:12px">${p.pinned ? '📌' : '📍'}</button>
+            <button onclick="event.stopPropagation();rememberPostit('${p.id}')" title="Save to Memory" style="background:none;border:none;cursor:pointer;font-size:12px">🧠</button>
+            <button onclick="event.stopPropagation();deletePostit('${p.id}')" title="Delete" style="background:none;border:none;cursor:pointer;font-size:12px;color:var(--red)">🗑</button>
+          </div>
+        </div>
+        <div style="font-size:9px;color:var(--text-muted);margin-top:4px">${p.source_app ? '📎 ' + escHtml(p.source_app) : ''} ${new Date(p.created_at * 1000).toLocaleDateString()}</div>
+      </div>
+    `).join('') : '<div class="empty-state"><div class="icon">📌</div><div class="text">No Post-its yet. Use Ctrl+Shift+H or click + Yeni Post-it</div></div>';
+  }
+}
+
+async function createNewPostit() {
+  const title = prompt('Post-it başlığı:');
+  if (title === null) return;
+  const content = prompt('Post-it içeriği:');
+  if (!content) return;
+  const r = await fetch('/api/postits', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({title, content})});
+  if (r.ok) loadPostits();
+}
+
+async function editPostit(id) {
+  const d = await api(`/api/postits/${id}`);
+  if (!d || !d.postit) return;
+  const p = d.postit;
+  const newContent = prompt('Post-it düzenle:', p.content);
+  if (newContent === null) return;
+  await fetch(`/api/postits/${id}`, {method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify({content: newContent})});
+  loadPostits();
+}
+
+async function togglePin(id) {
+  await fetch(`/api/postits/${id}/pin`, {method:'POST'});
+  loadPostits();
+}
+
+async function rememberPostit(id) {
+  const r = await fetch(`/api/postits/${id}/memory`, {method:'POST'});
+  const d = await r.json();
+  alert(d.saved_to_memory ? '✅ Hafızaya kaydedildi!' : '⚠️ Kaydedilemedi');
+}
+
+async function deletePostit(id) {
+  if (!confirm('Bu Post-it silinecek. Emin misiniz?')) return;
+  await fetch(`/api/postits/${id}`, {method:'DELETE'});
+  loadPostits();
+}
+
+async function searchPostits() {
+  const q = document.getElementById('postit-search').value;
+  if (!q) { loadPostits(); return; }
+  const d = await api(`/api/postits/search?q=${encodeURIComponent(q)}`);
+  if (d && d.postits) {
+    document.getElementById('postit-list').innerHTML = d.postits.map(p => `
+      <div class="card" style="margin-bottom:8px;border-left:3px solid ${p.color || '#FEF08A'}">
+        <div style="font-weight:600;font-size:12px">${escHtml(p.title || 'Untitled')}</div>
+        <div style="font-size:10px;color:var(--text-secondary);margin-top:2px">${escHtml((p.content || '').substring(0, 120))}</div>
+      </div>
+    `).join('') || '<div class="empty-state"><div class="text">Sonuç bulunamadı</div></div>';
   }
 }
 

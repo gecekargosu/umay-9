@@ -2123,6 +2123,200 @@ def on_cancel_task(data):
     })
 
 
+# ─── Post-it API ──────────────────────────────────────
+
+@app.route("/api/postits", methods=["GET"])
+def postit_list_api():
+    """List all Post-its."""
+    try:
+        from core.postit_store import list_postits, get_stats
+        visible_only = request.args.get("visible", "false").lower() == "true"
+        postits = list_postits(visible_only=visible_only)
+        stats = get_stats()
+        return jsonify({"postits": postits, "stats": stats})
+    except Exception as e:
+        return jsonify({"postits": [], "error": str(e)}), 500
+
+
+@app.route("/api/postits", methods=["POST"])
+def postit_create_api():
+    """Create a new Post-it."""
+    try:
+        from core.postit_store import create_postit
+        data = request.get_json(force=True)
+        postit = create_postit(
+            title=data.get("title", ""),
+            content=data.get("content", ""),
+            color=data.get("color", "#FEF08A"),
+            x=data.get("x", 100),
+            y=data.get("y", 100),
+            width=data.get("width", 280),
+            height=data.get("height", 200),
+            pinned=data.get("pinned", True),
+            source_app=data.get("source_app"),
+            source_url=data.get("source_url"),
+            source_document=data.get("source_document"),
+        )
+        return jsonify({"postit": postit}), 201
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/postits/<postit_id>", methods=["GET"])
+def postit_get_api(postit_id):
+    """Get a single Post-it."""
+    try:
+        from core.postit_store import get_postit
+        postit = get_postit(postit_id)
+        if not postit:
+            return jsonify({"error": "Post-it not found"}), 404
+        return jsonify({"postit": postit})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/postits/<postit_id>", methods=["PUT"])
+def postit_update_api(postit_id):
+    """Update a Post-it."""
+    try:
+        from core.postit_store import update_postit
+        data = request.get_json(force=True)
+        postit = update_postit(postit_id, **data)
+        if not postit:
+            return jsonify({"error": "Post-it not found"}), 404
+        return jsonify({"postit": postit})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/postits/<postit_id>", methods=["DELETE"])
+def postit_delete_api(postit_id):
+    """Delete a Post-it."""
+    try:
+        from core.postit_store import delete_postit
+        deleted = delete_postit(postit_id)
+        if not deleted:
+            return jsonify({"error": "Post-it not found"}), 404
+        return jsonify({"deleted": True})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/postits/<postit_id>/hide", methods=["POST"])
+def postit_hide_api(postit_id):
+    """Hide a Post-it (close without deleting)."""
+    try:
+        from core.postit_store import hide_postit
+        postit = hide_postit(postit_id)
+        if not postit:
+            return jsonify({"error": "Post-it not found"}), 404
+        return jsonify({"postit": postit})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/postits/<postit_id>/show", methods=["POST"])
+def postit_show_api(postit_id):
+    """Show a hidden Post-it."""
+    try:
+        from core.postit_store import show_postit
+        postit = show_postit(postit_id)
+        if not postit:
+            return jsonify({"error": "Post-it not found"}), 404
+        return jsonify({"postit": postit})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/postits/<postit_id>/pin", methods=["POST"])
+def postit_pin_api(postit_id):
+    """Toggle pin state."""
+    try:
+        from core.postit_store import toggle_pin
+        postit = toggle_pin(postit_id)
+        if not postit:
+            return jsonify({"error": "Post-it not found"}), 404
+        return jsonify({"postit": postit})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/postits/<postit_id>/position", methods=["PUT"])
+def postit_position_api(postit_id):
+    """Save Post-it position."""
+    try:
+        from core.postit_store import save_position
+        data = request.get_json(force=True)
+        postit = save_position(postit_id, data.get("x", 0), data.get("y", 0))
+        if not postit:
+            return jsonify({"error": "Post-it not found"}), 404
+        return jsonify({"postit": postit})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/postits/<postit_id>/memory", methods=["POST"])
+def postit_memory_api(postit_id):
+    """Save Post-it content to UMAY memory."""
+    try:
+        from core.postit_store import get_postit, update_postit
+        from core.memory.memory_bridge import learn
+        postit = get_postit(postit_id)
+        if not postit:
+            return jsonify({"error": "Post-it not found"}), 404
+        fact = f"[Post-it] {postit['title']}: {postit['content']}"
+        added = learn(fact, source="postit")
+        if added:
+            update_postit(postit_id, memory_id=fact[:50])
+        return jsonify({"saved_to_memory": added, "fact": fact[:100]})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/postits/search", methods=["GET"])
+def postit_search_api():
+    """Search Post-its."""
+    try:
+        from core.postit_store import search_postits
+        query = request.args.get("q", "")
+        if not query:
+            return jsonify({"postits": []})
+        postits = search_postits(query)
+        return jsonify({"postits": postits})
+    except Exception as e:
+        return jsonify({"postits": [], "error": str(e)}), 500
+
+
+@app.route("/api/postits/quick", methods=["POST"])
+def postit_quick_create_api():
+    """Quick create from clipboard/hotkey — minimal payload."""
+    try:
+        from core.postit_store import create_postit
+        data = request.get_json(force=True)
+        content = data.get("content", "").strip()
+        if not content:
+            return jsonify({"error": "No content provided"}), 400
+        # Auto-generate title from first line
+        first_line = content.split("\n")[0][:80]
+        title = data.get("title", first_line)
+        postit = create_postit(
+            title=title,
+            content=content,
+            color=data.get("color", "#FEF08A"),
+            source_app=data.get("source_app"),
+        )
+        # Auto-save to memory if requested
+        if data.get("save_to_memory"):
+            try:
+                from core.memory.memory_bridge import learn
+                learn(f"[Post-it] {title}: {content[:200]}", source="postit")
+            except Exception:
+                pass
+        return jsonify({"postit": postit}), 201
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 # ─── Baslangic ─────────────────────────────────────────
 
 # Initialize conversation store DB on startup

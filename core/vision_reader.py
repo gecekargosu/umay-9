@@ -262,8 +262,7 @@ def ask_vision_model(
         response = requests.post(
             f"{ollama_url}/api/chat",
             json=payload,
-            timeout=120,
-        )
+            timeout=120)
         response.raise_for_status()
         duration = time.time() - start_time
 

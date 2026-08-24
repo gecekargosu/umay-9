@@ -204,8 +204,7 @@ class TelegramAdapter:
             self._http_client = None
             resp = requests.get(
                 f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/getMe",
-                timeout=10,
-            )
+                timeout=10)
             if resp.status_code == 200:
                 bot_info = resp.json().get("result", {})
                 log(f"[TELEGRAM] Bot bağlandı: @{bot_info.get('username', 'unknown')}")
@@ -506,8 +505,7 @@ class TelegramAdapter:
                 import requests
                 metadata_response = requests.get(
                     f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/getFile",
-                    params={"file_id": file_id}, timeout=15,
-                )
+                    params={"file_id": file_id}, timeout=15)
             if not self._telegram_response_ok(metadata_response):
                 return None
             file_path = metadata_response.json().get("result", {}).get("file_path")
@@ -522,8 +520,7 @@ class TelegramAdapter:
                 import requests
                 response = requests.get(
                     f"https://api.telegram.org/file/bot{TELEGRAM_BOT_TOKEN}/{file_path}",
-                    timeout=30,
-                )
+                    timeout=30)
             headers = getattr(response, "headers", {}) or {}
             content_length = headers.get("content-length")
             if content_length and int(content_length) > TELEGRAM_MAX_FILE_BYTES:

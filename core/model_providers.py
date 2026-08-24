@@ -121,8 +121,7 @@ class OllamaProvider(ModelProvider):
             r = requests.post(
                 f"{self.base_url}/api/chat",
                 json=payload,
-                timeout=timeout,
-            )
+                timeout=timeout)
             r.raise_for_status()
             result = r.json()
             message = result.get("message", {})
@@ -193,8 +192,7 @@ class OpenAICompatibleProvider(ModelProvider):
             r = requests.get(
                 f"{self.base_url}/models",
                 headers={"Authorization": f"Bearer {self.api_key}"},
-                timeout=10,
-            )
+                timeout=10)
             return r.ok
         except Exception:
             # Even if /models endpoint fails, try a simple request
@@ -205,8 +203,7 @@ class OpenAICompatibleProvider(ModelProvider):
             r = requests.get(
                 f"{self.base_url}/models",
                 headers={"Authorization": f"Bearer {self.api_key}"},
-                timeout=10,
-            )
+                timeout=10)
             r.raise_for_status()
             data = r.json()
             return [m.get("id", "") for m in data.get("data", []) if m.get("id")]
@@ -245,8 +242,7 @@ class OpenAICompatibleProvider(ModelProvider):
                 f"{self.base_url}/chat/completions",
                 json=payload,
                 headers=headers,
-                timeout=timeout,
-            )
+                timeout=timeout)
             r.raise_for_status()
             result = r.json()
             choice = result.get("choices", [{}])[0]

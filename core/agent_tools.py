@@ -26,21 +26,52 @@ BACKUP_DIR_NAME = ".umay_backups"
 
 SKIP_PARTS = {".git", "__pycache__", ".venv", "node_modules", "dist", "build", ".next", ".cache"}
 SAFE_COMMANDS = [
-    r"^python(?:\.exe)?\s+-m\s+pytest(?:\s|$)",
-    r"^pytest(?:\.exe)?(?:\s|$)",
+    # Python
     r"^python(?:\.exe)?\s+--version$",
-    r"^node(?:\.exe)?\s+--version$",
-    r"^npm(?:\.cmd)?\s+--version$",
-    r"^npm(?:\.cmd)?\s+run\s+lint(?:\s|$)",
-    r"^git\s+(?:status|diff(?:\s|$)|log(?:\s|$)|branch(?:\s|$))",
-    r"^docker(?:\.exe)?\s+compose\s+(?:ps|config)(?:\s|$)",
+    r"^python3\s+--version$",
+    r"^python(?:\.exe)?\s+-m\s+(?:pytest|unittest|mypy|ruff|flake8|black|isort|pip)(?:\s|$)",
+    r"^python(?:\.exe)?\s+[\w/._-]+\.py(?:\s|$)",
+    r"^pytest(?:\.exe)?(?:\s|$)",
+    r"^pip(?:3)?\s+(?:install|list|show|freeze|check)(?:\s|$)",
+    # Node.js
+    r"^node(?:\.exe)?\s+",
+    r"^npm(?:\.cmd)?\s+",
+    r"^npx(?:\.cmd)?\s+",
+    r"^yarn\s+",
+    # Git
+    r"^git\s+",
+    # Docker
+    r"^docker(?:\.exe)?\s+",
+    # Read-only shell
+    r"^(?:echo|type|cat|head|tail|less|more|wc|sort|uniq|grep|find|ls|dir|tree)\b",
+    r"^pwd$",
+    # File operations (within workspace)
+    r"^(?:cp|copy|mv|move|mkdir|md|rd|rmdir|ren|rename)\b",
+    # System info
+    r"^(?:ipconfig|ifconfig|hostname|whoami|id|uname|date|time|df|du|free|ps|top|lsof|netstat|ss)\b",
+    # Dev tools
+    r"^(?:ruff|flake8|black|isort|mypy|pylint|eslint|prettier)(?:\.exe)?\s+",
+    r"^(?:cargo|go|rustc|gcc|g\+\+|make|cmake)\s+",
+    # curl / wget for API testing
+    r"^(?:curl|wget)\s+",
 ]
 
 DENIED_COMMANDS = [
+    # Disk/system destruction
     r"\bformat\b", r"\bdel\s+/[sq]\b", r"\brd\s+/[sq]\b",
     r"\bRemove-Item\b.*-Recurse.*-Force", r"\bshutdown\b",
     r"\brestart-computer\b", r"\bStop-Computer\b", r"\breg\s+delete\b",
     r"\bdiskpart\b",
+    # System modification
+    r"\bsudo\b", r"\bchmod\s+777\b",
+    r"\bnet\s+user\s+.*\s+/add\b",
+    r"\bnet\s+localgroup\s+",
+    # Data exfiltration risk
+    r"\bcurl\s+.*\s+-d\s+.*@/etc/(?:passwd|shadow)\b",
+    r"\bwget\s+.*\s+/etc/(?:passwd|shadow)\b",
+    # Recursive delete in system paths
+    r"\brm\s+-rf\s+/(?:bin|sbin|usr|etc|var|proc|sys|dev)(?:\s|$)",
+    r"\brmdir\s+/s\s+[A-Z]:\\(?:Windows|Program|Users)\b",
 ]
 
 

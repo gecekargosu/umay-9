@@ -812,11 +812,12 @@ def execute_chat_task(task_id, session_id, soru, attachments, *, on_status=None,
                     elif _intent == Intent.FILE:
                         # Only run appropriate tool based on message keywords
                         _soru_lower_file = soru.lower()
-                        _is_list = any(w in _soru_lower_file for w in ['listele', 'listele', 'goster', 'göster', 'icerik', 'içerik', 'ne var'])
-                        _is_read = any(w in _soru_lower_file for w in ['oku', 'okuma', 'ac', 'aç', 'icerigi', 'içeriği'])
+                        _is_list = any(w in _soru_lower_file for w in ['listele', 'listele', 'goster', 'göster', 'icerik', 'içerik'])
+                        _is_read = any(w in _soru_lower_file for w in ['oku', 'okuma', 'ac', 'aç', 'icerigi', 'içeriği', 'ne var'])
                         _is_search = any(w in _soru_lower_file for w in ['ara', 'bul', 'search', 'find'])
+                        _has_file_ext = bool(_re.search(r'\.(py|txt|json|js|ts|html|css|md|yml|yaml|toml|cfg|ini|log|csv)\b', soru, _re.IGNORECASE))
                         # Skip tools that don't match the message intent
-                        if _is_list and tool_name not in ('list_directory', 'scan_directory'):
+                        if _is_list and not _has_file_ext and tool_name not in ('list_directory', 'scan_directory'):
                             continue
                         if _is_read and tool_name not in ('read_file', 'read_document'):
                             continue
@@ -826,12 +827,12 @@ def execute_chat_task(task_id, session_id, soru, attachments, *, on_status=None,
                             # Extract path from message or use workspace
                             import re as _re
                             _resolved_path = None
-                            # Try Windows absolute path first
+                            # 1. Windows absolute path first
                             path_match = _re.search(r'[A-Za-z]:\\[^\s"\'<>]+', soru)
                             if path_match:
                                 _resolved_path = _resolve_host_path(path_match.group(1))
                             if not _resolved_path:
-                                # Resolve common Turkish folder names to host paths
+                                # 2. Resolve common Turkish folder names to host paths
                                 _soru_lower = soru.lower()
                                 _folder_map = {
                                     'masaüstü': '/host/Desktop', 'masaustu': '/host/Desktop',
@@ -847,7 +848,21 @@ def execute_chat_task(task_id, session_id, soru, attachments, *, on_status=None,
                                     if key in _soru_lower:
                                         if os.path.exists(container_path):
                                             _resolved_path = container_path
-                                        break
+                                            break
+                            if not _resolved_path:
+                                # 3. Extract directory name from natural language
+                                # "core klasörünü listele" → "core"
+                                # "tests dosyalarını listele" → "tests"
+                                _dir_match = _re.search(r'\b([\w]+)\s+(?:klasör|klasoru|dosyalar|dosyaları|içindeki|icerik|listele|göster|goster)\b', soru, _re.IGNORECASE)
+                                if _dir_match:
+                                    _candidate = _dir_match.group(1)
+                                    if os.path.isdir(os.path.join('.', _candidate)):
+                                        _resolved_path = _candidate
+                            if not _resolved_path:
+                                # 4. Extract relative path: "core/tests", "src/core"
+                                _rel_match = _re.search(r'\b([\w/\\]+(?:/[\w]+)+)\b', soru)
+                                if _rel_match and os.path.isdir(_rel_match.group(1)):
+                                    _resolved_path = _rel_match.group(1)
                             if _resolved_path:
                                 tool_args = {"path": _resolved_path}
                             else:
@@ -855,7 +870,17 @@ def execute_chat_task(task_id, session_id, soru, attachments, *, on_status=None,
                         elif tool_name == "read_file":
                             # Try to find a file path in the message
                             import re as _re
+                            # 1. Windows absolute path: C:\Users\...\file.py
                             file_match = _re.search(r'[A-Za-z]:\\[^\s"\'<>]+\.\w+', soru)
+                            if not file_match:
+                                # 2. Unix/container absolute path: /app/core/engine.py
+                                file_match = _re.search(r'(/(?:app|host|tmp|root|home|var|opt)/[^\s"\'<>]+\.\w+)', soru)
+                            if not file_match:
+                                # 3. Relative path with extension: core/engine.py, engine.py, requirements.txt
+                                file_match = _re.search(r'([\w/\\._-]+\.(?:py|txt|json|js|ts|html|css|md|yml|yaml|toml|cfg|ini|log|csv|xlsx|docx|pdf|sh|bat|ps1))\b', soru)
+                            if not file_match:
+                                # 4. Standalone filename: engine.py, requirements.txt (no path prefix)
+                                file_match = _re.search(r'\b([\w.-]+\.(?:py|txt|json|js|ts|html|css|md|yml|yaml|toml|cfg|ini|log|csv))\b', soru)
                             if file_match:
                                 tool_args = {"path": file_match.group(1)}
                             else:

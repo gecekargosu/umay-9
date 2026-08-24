@@ -76,6 +76,7 @@ INTENT_RULES = [
         "dosyayı aç", "dosyayi ac", "dosyayı göster", "dosyayi goster",
         "dosyayı incele", "dosyayi incele", "dosyayı analiz et",
         "dosyaya yaz", "dosyaya ekle", "dosyayı değiştir", "dosyayi degistir",
+        "dosyaya icerik ekle", "dosyaya içerik ekle", "dosyaya yaz icerik",
         "dosyaya bunu yaz", "dosyaya şunu yaz", "dosyaya bunu ekle", "dosyaya şunu ekle",
         "dosyaya bunu", "dosyaya şunu", "dosyaya suyu",
         "dosyadaki", "dosyanin", "dosyası", "dosyasi",
@@ -83,6 +84,7 @@ INTENT_RULES = [
         "şu dosyayı", "su dosyayi", "şu dosyaya", "su dosyaya",
         "klasörü listele", "klasoru listele", "klasörleri listele",
         "klasorunu listele", "klasorlerini listele",
+        "klasörünü listele", "klasörünü goster", "klasörünü göster",
         "dosyaları listele", "dosyalari listele",
         "klasördeki", "klasordaki", "klasörde ne var",
         "klasorunu", "klasorunde", "klasordeki",
@@ -104,7 +106,8 @@ INTENT_RULES = [
         "dosyanın içinde ne var", "dosyanin icinde ne var",
         "dosyanın içeriği ne", "dosyanin icerigi ne",
         # Geniş dosya okuma (yeterince spesifik olmayan kelimeler Regex ile kontrol)
-        "ilk", "son", "satır", "satiri", "icerik",
+        # NOT: 'satır' ve 'icerik' çok genel — false positive'e neden olur
+        "ilk", "son",
         "göster", "goster", "oku", "incele",
     ]),
 
@@ -253,7 +256,8 @@ def classify_intent(text: str) -> Intent:
     # Dosya uzantıları
     has_file_ext = bool(_re.search(r'\.(py|txt|json|js|ts|html|css|md|yml|yaml|toml|cfg|ini|log|csv|xlsx|docx|pdf)\b', text_lower))
     # "ilk X satır", "son X satır" gibi dosya okuma kalıpları
-    has_line_pattern = bool(_re.search(r'\b(ilk|son|tüm|tum|ilk\d+|son\d+)\s*\d*\s*(satır|satiri|line|row)\b', text_lower))
+    # NOT: "10 satırlık kod" bu pattern DEĞİL — kod üretme isteği
+    has_line_pattern = bool(_re.search(r'\b(ilk|son|tüm|tum)\s*\d*\s*(satır|satiri|line|row)\b', text_lower))
     
     # Eğer dosya/kod kalıbı varsa Calculator'a gitme
     if has_file_path or has_code_pattern or has_file_ext or has_line_pattern or has_file_ext_suffix:

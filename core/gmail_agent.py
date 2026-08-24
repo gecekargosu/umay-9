@@ -195,10 +195,10 @@ class IMAPConnector:
         self.password = credentials.get("GMAIL_APP_PASSWORD", "")
         self.connection: imaplib.IMAP4_SSL | None = None
 
-    def connect(self) -> bool:
-        """IMAP bağlantısı kur."""
+    def connect(self, timeout: float = 15.0) -> bool:
+        """IMAP bağlantısı kur. Timeout eklendi — sonsuz bekleme engellendi."""
         try:
-            self.connection = imaplib.IMAP4_SSL(self.host, self.port)
+            self.connection = imaplib.IMAP4_SSL(self.host, self.port, timeout=timeout)
             self.connection.login(self.user, self.password)
             log(f"[GMAIL] IMAP baglandi: {self.host}")
             return True
@@ -654,7 +654,7 @@ class SMTPConnector:
         msg.attach(MIMEText(body, content_type, "utf-8"))
 
         try:
-            with smtplib.SMTP(self.host, self.port) as server:
+            with smtplib.SMTP(self.host, self.port, timeout=15.0) as server:
                 server.starttls()
                 server.login(self.user, self.password)
                 all_recipients = to + (cc or [])

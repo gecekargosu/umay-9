@@ -50,14 +50,15 @@ print("\n--- MODEL ROUTING ---")
 from core.engine import resolve_model
 
 model_tests = [
-    ("chat", "phi4-mini"),
-    ("code", "gpt-oss"),
-    ("coding", "gpt-oss"),
-    ("reasoning", "gpt-oss"),
-    ("analysis", "gpt-oss"),
-    ("file", "phi4-mini"),
-    ("calculator", "phi4-mini"),
-    ("web", "phi4-mini"),
+    ("chat", "phi4-mini"),       # Basit sohbet → fast local
+    ("code", "gpt-oss"),         # Coding → cloud
+    ("coding", "gpt-oss"),       # Coding → cloud
+    ("reasoning", "gpt-oss"),    # Reasoning → cloud
+    ("analysis", "gpt-oss"),     # Analysis → cloud
+    ("file", "qwen3"),           # File tools → tool-calling model
+    ("calculator", "qwen3"),     # Calculator → tool-calling model
+    ("web", "qwen3"),            # Web tools → tool-calling model
+    ("tool_chat", "qwen3"),      # Tool chat → tool-calling model
 ]
 for task, expected_prefix in model_tests:
     model = resolve_model(task)

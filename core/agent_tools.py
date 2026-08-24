@@ -6,6 +6,7 @@ import re
 import subprocess
 import json
 import shutil
+import sys
 import time
 import threading
 from pathlib import Path
@@ -104,6 +105,23 @@ def _skip(item: Path) -> bool:
     return any(part in SKIP_PARTS for part in item.parts)
 
 
+def _relative_path(file: Path, base: Path = None) -> str:
+    """Get relative path string, handling /host/* and other cross-boundary paths."""
+    base = base or ACTIVE_WORKSPACE
+    try:
+        return str(file.relative_to(base))
+    except ValueError:
+        pass
+    # /host/* paths: relative to /host/ root
+    if str(file).startswith("/host/"):
+        try:
+            return str(file.relative_to("/host"))
+        except ValueError:
+            pass
+    # Fallback: use the full path as-is
+    return str(file)
+
+
 def list_directory(path: str = ".", recursive: bool = False) -> dict[str, Any]:
     target = _safe_path(path)
     if not target.is_dir():
@@ -141,7 +159,7 @@ def read_file(path: str, start_line: int = 1, max_lines: int = 400) -> dict[str,
     end = min(len(lines), start - 1 + max(1, int(max_lines)))
     content = "\n".join(f"{i}: {lines[i-1]}" for i in range(start, end + 1))
     return {
-        "path": str(target.relative_to(ACTIVE_WORKSPACE)),
+        "path": _relative_path(target),
         "lines": len(lines), "start_line": start, "end_line": end,
         "content": content[:MAX_READ],
     }
@@ -167,7 +185,7 @@ def search_files(pattern: str, path: str = ".", max_results: int = 100) -> dict[
                 continue
             if file.match(pattern):
                 matches.append({
-                    "path": str(file.relative_to(ACTIVE_WORKSPACE)),
+                    "path": _relative_path(file),
                     "line": 0, "text": f"[dosya adı eşleşmesi: {file.name}]",
                 })
                 if len(matches) >= max_results:
@@ -189,7 +207,7 @@ def search_files(pattern: str, path: str = ".", max_results: int = 100) -> dict[
                 for lineno, line in enumerate(file.read_text(encoding="utf-8", errors="ignore").splitlines(), 1):
                     if regex.search(line):
                         matches.append({
-                            "path": str(file.relative_to(ACTIVE_WORKSPACE)),
+                            "path": _relative_path(file),
                             "line": lineno, "text": line[:500],
                         })
                         if len(matches) >= max_results:
@@ -1503,4 +1521,5 @@ DISPATCH = {
     "gmail_folder_info": _gmail_folder_info, "gmail_send_email": _gmail_send_email,
     "evaluate_expression": evaluate_expression,
     "get_current_time": get_current_time, "get_current_date": get_current_date,
+    "aider_edit": aider_edit, "multi_file_edit": multi_file_edit,
 }

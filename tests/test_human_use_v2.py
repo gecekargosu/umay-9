@@ -109,7 +109,7 @@ matches = result.get("matches", [])
 check("Python dosyaları bulundu", len(matches) > 10, f"({len(matches)} matches)")
 # Verify they are real .py files
 paths = {m.get("path", "") for m in matches[:5]}
-check("Dosyalar gerçek core/ altında", any("core/" in p for p in paths), f"examples: {list(paths)[:3]}")
+check("Dosyalar gerçek core/ altında", any("core/" in p or "core\\" in p for p in paths), f"examples: {list(paths)[:3]}")
 
 # ═══════════════════════════════════════════════════════════════
 # SENARYO 6: Bir dosyadaki hatayı bul

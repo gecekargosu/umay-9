@@ -51,15 +51,22 @@ def _resolve_host_path(path_str: str) -> str | None:
     if ".." in path_str:
         return None
     
-    # Map Windows paths to container paths
-    _win_to_container = {
-        "c:\\users\\isitm\\desktop": "/host/Desktop",
-        "c:\\users\\isitm\\documents": "/host/Documents",
-        "c:\\users\\isitm\\downloads": "/host/Downloads",
-        "c:\\users\\isitm\\masaustu": "/host/Desktop",
-        "c:\\users\\isitm\\belgeler": "/host/Documents",
-        "c:\\users\\isitm\\indirilenler": "/host/Downloads",
-    }
+    # Map Windows paths to container paths (dynamic username)
+    _username = os.environ.get('USERNAME', os.environ.get('USER', '')).lower()
+    _win_to_container = {}
+    if _username:
+        _win_to_container = {
+            f"c:\\users\\{_username}\\desktop": "/host/Desktop",
+            f"c:\\users\\{_username}\\documents": "/host/Documents",
+            f"c:\\users\\{_username}\\downloads": "/host/Downloads",
+            f"c:\\users\\{_username}\\masaustu": "/host/Desktop",
+            f"c:\\users\\{_username}\\belgeler": "/host/Documents",
+            f"c:\\users\\{_username}\\indirilenler": "/host/Downloads",
+        }
+    # Fallback: also match any user path pattern
+    _win_to_container["c:\\users\\desktop"] = "/host/Desktop"
+    _win_to_container["c:\\users\\documents"] = "/host/Documents"
+    _win_to_container["c:\\users\\downloads"] = "/host/Downloads"
     
     # Normalize path for comparison
     path_lower = path_str.lower().replace("\\\\", "/").replace("\\", "/")
@@ -700,13 +707,14 @@ def execute_chat_task(task_id, session_id, soru, attachments, *, on_status=None,
             # Intent router tool kullanacaksa ona göre model seç
             # MODE-AWARE: LOCAL mode sadece local model kullanır
             if mode == "local":
-                # LOCAL: sadece local model, online provider kullanma
-                model = resolve_model("chat")
-                gorev = "chat"
+                # LOCAL: tool-calling destekli local model
+                model = resolve_model("tool_chat")
+                gorev = "tool_chat"
             else:
-                # AUTO/ONLINE: full routing
-                model, gorev = model_sec(soru)
-                model = model or resolve_model("chat")
+                # AUTO/ONLINE: tool-callingdestekli model sec
+                _routed_model, _routed_gorev = model_sec(soru)
+                gorev = "tool_chat"  # Tools lazimsa tool_chat kullan
+                model = _routed_model or resolve_model("tool_chat")
         elif _intent is not None and _intent in (Intent.CHAT, Intent.KNOWLEDGE):
             # Basit sohbet/bilgi → ama mesaj coding pattern iceriyorsa coding model sec
             _detected_model, _detected_gorev = model_sec(soru)
@@ -932,7 +940,7 @@ def execute_chat_task(task_id, session_id, soru, attachments, *, on_status=None,
                                 (r'port|baglanti port|socket', 'netstat -an' if not _is_linux else 'ss -tuln'),
                                 (r'wifi|wireless|kablosuz', 'netsh wlan show interfaces' if not _is_linux else 'iwconfig 2>/dev/null || ip link show'),
                                 (r'surucu|sürücü|driver', 'driverquery' if not _is_linux else 'lsmod'),
-                                (r'surec|process|task manager', 'tasklist /v /fo csv | head -20' if not _is_linux else 'ps aux --sort=-pcpu | head -25'),
+                                (r'surec|process|task manager', 'tasklist /v /fo csv' if not _is_linux else 'ps aux --sort=-pcpu | head -25'),
                                 (r'sistem bilgi|bilgisayar bilgi|pc bilgi', 'systeminfo' if not _is_linux else 'uname -a && cat /etc/os-release'),
                                 (r'tarih ve saat|bugunun tarihi', 'echo %date% %time%' if not _is_linux else 'date'),
                                 (r'klasor list|dosya list|folder list|directory', 'dir /b' if not _is_linux else 'ls -la'),

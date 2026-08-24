@@ -36,8 +36,10 @@ REQUEST_TIMEOUT = 180
 # ---------------------------------------------------------------------------
 
 MODEL_PREFERENCES = {
-    # Basit sohbet → local (hizli, ucretsiz, offline)
+    # Basit sohbet (tool gerektirmez) → hizli local model
     "chat": ["phi4-mini:latest", "qwen3:8b", "gemma2:9b", "gemma3:4b"],
+    # Tool-calling chat → tool destekli model (phi4-mini tool calling desteklemez)
+    "tool_chat": ["qwen3:8b", "qwen2.5-coder:7b", "gemma2:9b"],
     # Agent → cloud oncelikli, local fallback
     "agent": ["gpt-oss:20b-cloud", "qwen2.5-coder:7b", "qwen3:8b"],
     # Vision → local
@@ -106,16 +108,16 @@ def _model_matches(candidate: str, installed: str) -> bool:
 # Intent value → MODEL_PREFERENCES key mapping
 _INTENT_TO_TASK = {
     "code": "coding",
-    "file": "chat",
-    "web": "chat",
+    "file": "tool_chat",       # file operations need tool-calling model
+    "web": "tool_chat",        # web search needs tool-calling model
     "computer": "agent",
     "terminal": "agent",
     "knowledge": "chat",
-    "time": "chat",
-    "calculator": "chat",
+    "time": "tool_chat",       # time tools need tool-calling model
+    "calculator": "tool_chat",  # calculator needs tool-calling model
     "memory": "chat",
     "complex": "reasoning",
-    "document": "analysis",
+    "document": "tool_chat",   # document tools need tool-calling model
     "vision": "vision",
 }
 

@@ -1,36 +1,62 @@
-# ONLY exclude secrets and cache - everything else goes to GitHub
+# ═══════════════════════════════════════════════════════════════════════════════
+# UMAY 9 — .gitignore
+# ═══════════════════════════════════════════════════════════════════════════════
 
-# Secrets / credentials / API keys - NEVER upload these
+# ─── Secrets / Credentials ───────────────────────────────────────────────────
 .env
 .env.*
 *.env
-
-# Telegram sessions (contain auth tokens)
+!*.env.example
 *.session
 *.session-journal
 telegram_user_sessions/
 
-# Python cache
+# ─── Python ──────────────────────────────────────────────────────────────────
 __pycache__/
 *.pyc
+*.pyo
+*.pyd
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+*.egg
 
-# IDE
+# ─── Build / Dist ────────────────────────────────────────────────────────────
+dist/
+build/
+temp/
+
+# ─── IDE / Editor ────────────────────────────────────────────────────────────
 .vscode/
 .idea/
+*.swp
+*.swo
+*~
 
-# OS files
+# ─── OS ──────────────────────────────────────────────────────────────────────
 .DS_Store
 Thumbs.db
 desktop.ini
 
-# Temp / build
-*.egg-info/
-dist/
-build/
-temp/
-.pytest_cache/
-
-# RAG databases (large binary)
+# ─── RAG / Vector DB (large binaries) ───────────────────────────────────────
 rag/vector_db/
 rag/chroma/
 /memory/
+
+# ─── Freebuff internal ───────────────────────────────────────────────────────
+.freebuff/
+
+# ─── Runtime / Logs (generated) ──────────────────────────────────────────────
+logs/*.log
+logs/*.jsonl
+logs/email_cache/
+logs/screenshots/
+
+# ─── Backup (old versions, not source) ───────────────────────────────────────
+backup/
+
+# ─── Uploads (user files, test fixtures) ─────────────────────────────────────
+uploads/
+
+# ─── Docker runtime ──────────────────────────────────────────────────────────
+.docker/

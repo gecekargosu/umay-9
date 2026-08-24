@@ -260,6 +260,30 @@ def health():
     return jsonify({"status": "ok", "service": "umay-panel"})
 
 
+@app.route("/api/build")
+def build_info():
+    """Build info endpoint — returns git hash, version, build time."""
+    import json as _json
+    info = {"version": "9.0", "python": "3.13", "build_time": "unknown", "git_hash": "unknown"}
+    # Try to read build_info.json (Docker)
+    for path in ["build_info.json", "/app/build_info.json"]:
+        try:
+            with open(path) as f:
+                info.update(_json.load(f))
+            break
+        except Exception:
+            pass
+    # Try to get live git hash
+    try:
+        import subprocess as _sp
+        result = _sp.run(["git", "rev-parse", "--short", "HEAD"], capture_output=True, text=True, timeout=3)
+        if result.returncode == 0:
+            info["git_hash"] = result.stdout.strip()
+    except Exception:
+        pass
+    return jsonify(info)
+
+
 @app.route("/api/git", methods=["POST"])
 def siteye_git():
     """Verilen URL'ye gider — tek browser, her navigasyonda screenshot + analiz."""

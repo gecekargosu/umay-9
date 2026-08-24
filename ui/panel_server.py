@@ -1252,50 +1252,65 @@ def execute_chat_task(task_id, session_id, soru, attachments, *, on_status=None,
         check_cancel(task_id)
         check_pause(task_id)
 
-        t_model_start = time.time()
-        try:
-            result = umay_chat(messages, model=model, tools=active_tools if use_tools else None, mode=mode)
-        except Exception as tool_exc:
-            t_model_done = time.time()
-            if on_status:
-                on_status(task_id, "error", f"Tool model hatası: {tool_exc}")
-            _add_to_history(session_id, "user", soru)
-            _add_to_history(session_id, "assistant", f"[Hata: {tool_exc}]")
-            if on_error:
-                on_error(task_id, {"error": str(tool_exc)})
-            return
-        t_model_done = time.time()
-        msg = result.get("message", {}) if isinstance(result, dict) else {}
-        tool_usage = result.get("usage") if isinstance(result, dict) else None
-        tool_calls = _parse_tool_calls(msg)
+        # ── MULTI-STEP TOOL LOOP ──
+        MAX_TOOL_STEPS = 5
         last_tool_name = None
         last_tool_status = None
-        last_tool_duration = None
         last_tool_result = None
+        cevap = ""
+        t_model_start = time.time()
 
-        if tool_calls:
+        for _tool_step in range(MAX_TOOL_STEPS):
+            try:
+                result = umay_chat(messages, model=model, tools=active_tools if use_tools else None, mode=mode)
+            except Exception as tool_exc:
+                t_model_done = time.time()
+                if on_status:
+                    on_status(task_id, "error", f"Tool model hatası: {tool_exc}")
+                _add_to_history(session_id, "user", soru)
+                _add_to_history(session_id, "assistant", f"[Hata: {tool_exc}]")
+                if on_error:
+                    on_error(task_id, {"error": str(tool_exc)})
+                return
+            t_model_done = time.time()
+            msg = result.get("message", {}) if isinstance(result, dict) else {}
+            tool_usage = result.get("usage") if isinstance(result, dict) else None
+            tool_calls = _parse_tool_calls(msg)
+
+            if not tool_calls:
+                # No more tool calls — this is the final answer
+                cevap = msg.get("content", "") if msg else str(result)
+                break
+
+            # Execute tools
             for tc in tool_calls:
                 func_name = tc.get("function", {}).get("name", "unknown")
                 last_tool_name = func_name
                 if on_status:
-                    on_status(task_id, "tool_running", f"Tool çalışıyor: {func_name}")
+                    on_status(task_id, "tool_running", f"Tool #{_tool_step+1}: {func_name}")
 
             messages.append(_assistant_tool_message(tool_calls))
             tool_msgs = _tool_messages(tool_calls)
             messages.extend(tool_msgs)
-            # Extract tool result info
+
             if tool_msgs:
                 last_tool_result_raw = tool_msgs[-1].get("content", "")
                 last_tool_result = last_tool_result_raw[:200] if last_tool_result_raw else None
                 last_tool_status = "PASS"
 
             if on_status:
-                on_status(task_id, "tool_done", "Tool tamamlandı, yanıt oluşturuluyor...")
+                on_status(task_id, "tool_done", f"Tool #{_tool_step+1} tamamlandı, devam ediliyor...")
 
-            # Cooperative pause/cancel checkpoint — after tool execution
             check_cancel(task_id)
             check_pause(task_id)
 
+            # If this was the last allowed step, format whatever we have
+            if _tool_step == MAX_TOOL_STEPS - 1:
+                last_result = tool_msgs[-1].get("content", "") if tool_msgs else ""
+                cevap = _format_tool_result(last_result, last_tool_name)
+
+        # Format final response if not already set
+        if not cevap and tool_msgs:
             last_result = tool_msgs[-1].get("content", "") if tool_msgs else ""
             try:
                 import json as _json
@@ -1307,12 +1322,9 @@ def execute_chat_task(task_id, session_id, soru, attachments, *, on_status=None,
                     else:
                         cevap = f"Dosya okundu: {rdata.get('shown_lines', '?')} satir gosterildi."
                 else:
-                    # Smart formatting based on result type
                     cevap = _format_tool_result(last_result, last_tool_name)
             except Exception:
                 cevap = _format_tool_result(last_result, last_tool_name)
-        else:
-            cevap = msg.get("content", "") if msg else str(result)
 
         t_end = time.time()
         latency = {
@@ -1322,7 +1334,7 @@ def execute_chat_task(task_id, session_id, soru, attachments, *, on_status=None,
         }
         _add_to_history(session_id, "user", soru)
         _add_to_history(session_id, "assistant", cevap)
-        resp_data = {"cevap": cevap, "model": model, "gorev": gorev, "latency": latency}
+        resp_data = {"cevap": cevap, "model": model, "gorev": gorev, "latency": latency, "tool_steps": _tool_step + 1}
         if last_tool_name:
             resp_data["tool"] = last_tool_name
             resp_data["tool_status"] = last_tool_status or "PASS"

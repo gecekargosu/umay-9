@@ -1063,6 +1063,17 @@ def gmail_send_email(
     GÜVENLİK UYARISI: Bu fonksiyon gerçek e-posta gönderir!
     Yalnızca kullanıcı onayından sonra çalıştırılmalıdır.
     """
+    # Rate limit check
+    from core.rate_limiter import check_rate_limit, record_usage
+    for limit_name in ["email_hourly", "email_daily"]:
+        result = check_rate_limit(limit_name)
+        if not result["allowed"]:
+            return {
+                "error": f"Rate limit asildi: {limit_name}. {result['retry_after']}sn bekleyin.",
+                "rate_limited": True,
+                "retry_after": result["retry_after"],
+            }
+
     log("[GMAIL] *** E-POSTA GONDERME *** Kullanıcı onayı gereklidir")
     creds = CredentialManager.load_credentials()
     valid, msg = CredentialManager.validate_credentials(creds)
@@ -1070,7 +1081,11 @@ def gmail_send_email(
         return {"error": msg}
 
     smtp = SMTPConnector(creds)
-    return smtp.send_email(to=to, subject=subject, body=body, is_html=is_html)
+    result = smtp.send_email(to=to, subject=subject, body=body, is_html=is_html)
+    if "error" not in result:
+        record_usage("email_hourly")
+        record_usage("email_daily")
+    return result
 
 
 def gmail_folder_info() -> dict[str, Any]:

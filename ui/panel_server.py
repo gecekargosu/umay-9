@@ -827,14 +827,47 @@ def execute_chat_task(task_id, session_id, soru, attachments, *, on_status=None,
                         if tool_name == "run_command":
                             import re as _re
                             _cmd = soru.strip()
-                            # Komut prefix/suffix temizleme
-                            _cleanup_patterns = [
-                                r'^(cmdde|cmd de|terminalde|terminal de|powershellde)\s*',
-                                r'\s*(komutunu|komutu|komut)\s*(calistir|calıstır|çalıştır|calıstır)?\s*$',
-                                r'\s*(calistir|calıstır|çalıştır|calıstır)\s*$',
+                            # 1. Natural Turkish → Windows command mapping
+                            _cmd_map = [
+                                (r'hostname', 'hostname'),
+                                (r'ipconfig|ip adres', 'ipconfig'),
+                                (r'mac adres|mac address', 'getmac'),
+                                (r'ekran kart|gpu|grafik kart|display adapter', 'wmic path win32_videocontroller get name'),
+                                (r'ram (?:kac|kaç|ne kadar|miktar|boyut)', 'wmic memorychip get capacity'),
+                                (r'ram (?:kullanim|kullanım|yüzde|oran)', 'wmic os get freephysicalmemory,totalvisiblememorysize /value'),
+                                (r'cpu|islemci|işlemci|processo', 'wmic cpu get name'),
+                                (r'disk (?:boyut|kapasite|alan|doluluk|bos)', 'wmic logicaldisk get size,freespace,caption'),
+                                (r'disk list|disk listele', 'wmic logicaldisk get caption,size,freespace'),
+                                (r'kullanici|kullanıcı|user', 'net user'),
+                                (r'port|baglanti port|socket', 'netstat -an'),
+                                (r'wifi|wireless|kablosuz', 'netsh wlan show interfaces'),
+                                (r'surucu|sürücü|driver', 'driverquery'),
+                                (r'surec|process|task manager', 'tasklist /v /fo csv | head -20'),
+                                (r'sistem bilgi|bilgisayar bilgi|pc bilgi', 'systeminfo'),
+                                (r'tarih ve saat|bugunun tarihi', 'echo %date% %time%'),
+                                (r'klasor list|dosya list|folder list|directory', 'dir /b'),
+                                (r'dir(\s|$)', 'dir'),
+                                (r'ls(\s|$)', 'dir /b'),
+                                (r'type(\s|$)', 'type'),
+                                (r'ping(\s|$)', 'ping localhost'),
                             ]
-                            for _pat in _cleanup_patterns:
-                                _cmd = _re.sub(_pat, '', _cmd, flags=_re.IGNORECASE).strip()
+                            _soru_lower = _cmd.lower().strip()
+                            _matched = False
+                            for _pattern, _command in _cmd_map:
+                                if _re.search(_pattern, _soru_lower):
+                                    _cmd = _command
+                                    _matched = True
+                                    break
+                            # 2. If no mapping matched, try direct command extraction
+                            if not _matched:
+                                _cleanup_patterns = [
+                                    r'^(cmdde|cmd de|terminalde|terminal de|powershellde|powershell ile)\s*',
+                                    r'\s*(komutunu|komutu|komut)\s*(calistir|calıstır|çalıştır|calıstır)?\s*$',
+                                    r'\s*(calistir|calıstır|çalıştır|calıstır)\s*$',
+                                    r'\s*(ogren|öğren|goster|göster|yap|soyle|söyle)\s*$',
+                                ]
+                                for _pat in _cleanup_patterns:
+                                    _cmd = _re.sub(_pat, '', _cmd, flags=_re.IGNORECASE).strip()
                             if not _cmd:
                                 _cmd = 'dir'  # Fallback
                             tool_args = {"command": _cmd}

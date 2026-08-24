@@ -128,6 +128,17 @@ INTENT_RULES = [
         "process", "task manager", "pid",
         "sistem bilgisi", "sistem bilgisi al",
         "log oku", "log dosyası",
+        # Natural system queries
+        "hostname", "ipconfig", "ip adres", "mac adres",
+        "disk", "harddisk", "ssd", "hdd",
+        "ram", "bellek", "cpu", "islemci", "işlemci",
+        "ekran kart", "gpu", "grafik",
+        "wifi", "internet baglant", "network",
+        "surucu", "sürücü", "driver",
+        "port", "socket", "baglanti", "bağlantı",
+        "kullanici", "kullanıcı", "user",
+        "dosya list", "klasor list", "klasör list",
+        "calistir", "çalıştır", "baslat", "başlat",
     ]),
 
     # MEMORY — Hafıza/bellek

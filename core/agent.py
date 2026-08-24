@@ -121,10 +121,59 @@ def _assistant_tool_message(tool_calls: list[dict]) -> dict:
     return {"role": "assistant", "content": "", "tool_calls": serialized}
 
 
+def _normalize_tool_paths(args: dict) -> dict:
+    r"""Normalize Windows host paths to Docker container paths in tool arguments.
+    
+    When LLM produces paths like C:\Users\...\Desktop, convert to /host/Desktop.
+    Only affects path-like arguments in filesystem tools.
+    """
+    import re as _re
+    PATH_KEYS = {'path', 'directory', 'folder', 'file_path', 'target', 'backup_relative', 'target_relative'}
+    # Windows path to Docker container path mapping
+    _win_to_docker = {
+        '/desktop': '/host/Desktop',
+        '/documents': '/host/Documents',
+        '/downloads': '/host/Downloads',
+        '/masaustu': '/host/Desktop',
+        '/belgeler': '/host/Documents',
+        '/indirilenler': '/host/Downloads',
+    }
+    normalized = dict(args)
+    for key in PATH_KEYS:
+        if key in normalized and isinstance(normalized[key], str):
+            val = normalized[key]
+            # Already a Docker path — skip
+            if val.startswith('/host/') or val.startswith('/app/'):
+                continue
+            # Windows path: C:\Users\<user>\Desktop\... → /host/Desktop/...
+            m = _re.match(r'(?i)[a-z]:\\users\\[^\\]+\\(.+)', val)
+            if m:
+                remainder = m.group(1).replace('\\', '/')
+                # Map common Windows folder names
+                remainder_lower = remainder.lower().split('/')[0]
+                docker_base = _win_to_docker.get('/' + remainder_lower, None)
+                if docker_base:
+                    rest = '/'.join(remainder.split('/')[1:]) if '/' in remainder else ''
+                    normalized[key] = f"{docker_base}/{rest}".rstrip('/') if rest else docker_base
+                continue
+            # C:\Users\<user>\Desktop (no trailing path)
+            m2 = _re.match(r'(?i)[a-z]:\\users\\[^\\]+\\(desktop|documents|downloads|masaustu|belgeler|indirilenler)$', val)
+            if m2:
+                folder = m2.group(1).lower()
+                docker_base = _win_to_docker.get('/' + folder)
+                if docker_base:
+                    normalized[key] = docker_base
+    return normalized
+
+
 def _execute_tool(call: dict) -> tuple[dict, dict]:
     call=_normalize_tool_call(call)
     fn=call.get("function") or {}; name=fn.get("name"); args=fn.get("arguments") or {}
     if name not in DISPATCH: return call,{"error":f"Bilinmeyen tool: {name}"}
+    # Normalize Windows paths to Docker paths for filesystem tools
+    FILESYSTEM_TOOLS = {'list_directory', 'read_file', 'search_files', 'read_document', 'scan_directory', 'search_in_documents', 'open_file', 'open_folder'}
+    if name in FILESYSTEM_TOOLS:
+        args = _normalize_tool_paths(args)
     try:
         print(f"[UMAY AI][EL] {name}({json.dumps(args, ensure_ascii=False)})")
         result=DISPATCH[name](**args)

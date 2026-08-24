@@ -545,11 +545,12 @@ def security_check():
 
 def send_telegram(message):
     """Send a message via Telegram Bot API. Returns (success, error)."""
-    token = os.environ.get("UMAY_TELEGRAM_BOT_TOKEN", "")
-    chat_id = os.environ.get("UMAY_TELEGRAM_CHAT_ID", "")
+    # Support both UMAY_TELEGRAM_* and TELEGRAM_* env var names
+    token = os.environ.get("UMAY_TELEGRAM_BOT_TOKEN") or os.environ.get("TELEGRAM_BOT_TOKEN", "")
+    chat_id = os.environ.get("UMAY_TELEGRAM_CHAT_ID") or os.environ.get("TELEGRAM_ALLOWED_USER_ID", "")
 
     if not token or not chat_id:
-        return False, "TELEGRAM_BOT_TOKEN or UMAY_TELEGRAM_CHAT_ID not set"
+        return False, "TELEGRAM_BOT_TOKEN and TELEGRAM_ALLOWED_USER_ID not set"
 
     if token.startswith("YOUR_") or chat_id.startswith("YOUR_"):
         return False, "Placeholder values detected — real token not configured"

@@ -712,9 +712,9 @@ def execute_chat_task(task_id, session_id, soru, attachments, *, on_status=None,
                 gorev = "tool_chat"
             else:
                 # AUTO/ONLINE: tool-callingdestekli model sec
-                _routed_model, _routed_gorev = model_sec(soru)
-                gorev = "tool_chat"  # Tools lazimsa tool_chat kullan
-                model = _routed_model or resolve_model("tool_chat")
+                # Tools lazimsa her zaman tool_chat modelini kullan
+                gorev = "tool_chat"
+                model = resolve_model("tool_chat")
         elif _intent is not None and _intent in (Intent.CHAT, Intent.KNOWLEDGE):
             # Basit sohbet/bilgi → ama mesaj coding pattern iceriyorsa coding model sec
             _detected_model, _detected_gorev = model_sec(soru)

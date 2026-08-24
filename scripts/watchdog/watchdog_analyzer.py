@@ -1,12 +1,16 @@
 """
-UMAY Watchdog Analyzer
-======================
+UMAY Watchdog Analyzer (Sentinel-enhanced)
+==========================================
 Her 20 dakikada UMAY projesini tarar:
 - Dosya değişikliklerini tespit eder
 - Kod değişikliklerini analiz eder
 - Regression testleri çalıştırır
 - Human-use senaryolarını test eder
 - Docker/API durumunu kontrol eder
+- Sistem kaynaklarını izler
+- Güvenlik taraması yapar
+- Olay korelasyonu ve incident yönetimi
+- Sağlık puanı hesaplar
 - Telegram'a rapor gönderir
 
 Watchdog KENDİ BAŞINA KOD DEĞİŞTİRMEZ.
@@ -22,6 +26,16 @@ import time
 import hashlib
 from datetime import datetime, timezone
 from pathlib import Path
+
+# Sentinel imports
+sys.path.insert(0, str(Path(__file__).parent))
+from sentinel import (
+    Severity, SentinelEvent, IncidentEngine, HealthScore,
+    calculate_health_score, calculate_risk_score, get_system_resources, TrendTracker,
+    SelfMonitor, scan_for_secrets, observe_command,
+    format_sentinel_report, SentinelState,
+    should_run_full_regression, get_relevant_tests,
+)
 
 # ─── Config ──────────────────────────────────────────────────
 
@@ -207,58 +221,56 @@ def analyze_changes(changes):
     analyses = []
     for change in changes:
         path = change["path"]
+        is_critical = path in CRITICAL_FILES
+        info = change.get("info", {})
+        size = info.get("size", 0)
+
+        risk_score = calculate_risk_score(change["type"], path, is_critical, size)
+
         analysis = {
             "path": path,
             "type": change["type"],
             "purpose": CRITICAL_FILES.get(path, "Unknown file"),
-            "is_critical": path in CRITICAL_FILES,
+            "is_critical": is_critical,
+            "risk_score": risk_score,
         }
 
         if change["type"] == "MODIFIED" and path.endswith(".py"):
-            # Try to understand what changed
             analysis["language"] = "Python"
-            analysis["risk"] = "MEDIUM" if path in CRITICAL_FILES else "LOW"
-            # Check if it's a test file
             if "test" in path.lower():
                 analysis["category"] = "test"
-                analysis["risk"] = "LOW"
             elif path.startswith("core/"):
                 analysis["category"] = "core"
-                analysis["risk"] = "HIGH"
             elif path.startswith("ui/"):
                 analysis["category"] = "frontend"
-                analysis["risk"] = "MEDIUM"
             elif path.startswith("agents/"):
                 analysis["category"] = "agent"
-                analysis["risk"] = "MEDIUM"
+            else:
+                analysis["category"] = "other"
         elif path.endswith((".yml", ".yaml")):
             analysis["language"] = "YAML"
             analysis["category"] = "config"
-            analysis["risk"] = "MEDIUM"
         elif path.endswith((".json",)):
             analysis["language"] = "JSON"
             analysis["category"] = "config"
-            analysis["risk"] = "LOW"
-        elif path.endswith(("Dockerfile",)):
+        elif path.endswith("Dockerfile"):
             analysis["language"] = "Dockerfile"
             analysis["category"] = "build"
-            analysis["risk"] = "MEDIUM"
         elif path.endswith((".ps1",)):
             analysis["language"] = "PowerShell"
             analysis["category"] = "script"
-            analysis["risk"] = "LOW"
         elif path.endswith((".html",)):
             analysis["language"] = "HTML"
             analysis["category"] = "frontend"
-            analysis["risk"] = "MEDIUM"
         elif path.endswith((".md",)):
             analysis["language"] = "Markdown"
             analysis["category"] = "docs"
-            analysis["risk"] = "LOW"
+        elif path.endswith(".env"):
+            analysis["language"] = "Config"
+            analysis["category"] = "secrets"
         else:
             analysis["language"] = "Other"
             analysis["category"] = "other"
-            analysis["risk"] = "LOW"
 
         analyses.append(analysis)
     return analyses
@@ -699,11 +711,39 @@ def format_telegram_message(report, status_icon, status):
 # ─── Main ────────────────────────────────────────────────────
 
 def run_watchdog():
-    """Run the full watchdog analysis."""
+    """Run the full sentinel-enhanced watchdog analysis."""
     start_time = datetime.now()
-    log("UMAY Watchdog started")
+    state_dir = STATE_DIR
+    sentinel = SentinelState(state_dir)
+    log("UMAY SENTINEL started")
 
-    # 1. Snapshot & diff
+    # 0. Self-monitor: check if we're running on time
+    self_health = sentinel.self_monitor.is_healthy()
+    if not self_health["healthy"]:
+        for w in self_health.get("warnings", []):
+            log(f"  ⚠️ SELF: {w}")
+
+    # 1. System resources
+    log("Checking system resources...")
+    resources = get_system_resources()
+    log(f"  RAM: {resources.get('ram_percent', '?')}% | Disk: {resources.get('disk_percent', '?')}% | CPU: {resources.get('cpu_percent', '?')}%")
+    sentinel.trends.record("ram_percent", resources.get("ram_percent", 0))
+    sentinel.trends.record("disk_percent", resources.get("disk_percent", 0))
+
+    # Check resource anomalies
+    if sentinel.trends.check_anomaly("ram_percent", resources.get("ram_percent", 0), threshold=0.3):
+        event = SentinelEvent(
+            event_type="resource_anomaly",
+            severity=Severity.WARNING,
+            source="resource_monitor",
+            component="system",
+            message=f"RAM usage anomaly: {resources.get('ram_percent', 0)}%",
+            risk_score=40,
+        )
+        sentinel.record_event(event)
+        sentinel.maybe_create_incident(event)
+
+    # 2. Snapshot & diff
     log("Scanning project files...")
     old_snapshot = load_snapshot()
     new_snapshot = scan_project()
@@ -712,37 +752,130 @@ def run_watchdog():
         f"{sum(1 for c in changes if c['type']=='MODIFIED')} modified, "
         f"{sum(1 for c in changes if c['type']=='DELETED')} deleted)")
 
-    # 2. Analyze changes
+    # 3. Analyze changes with risk scoring
     log("Analyzing changes...")
     analyses = analyze_changes(changes)
     critical = [a for a in analyses if a.get("is_critical")]
+    high_risk = [a for a in analyses if a.get("risk_score", 0) > 50]
     if critical:
         log(f"  ⚠️ {len(critical)} critical file(s) changed: {[a['path'] for a in critical]}")
+    if high_risk:
+        log(f"  🔴 {len(high_risk)} high-risk change(s)")
+        for a in high_risk:
+            event = SentinelEvent(
+                event_type="high_risk_change",
+                severity=Severity.WARNING if a["risk_score"] < 70 else Severity.IMPORTANT,
+                source="file_monitor",
+                component=a["path"],
+                message=f"High-risk change: risk_score={a['risk_score']}",
+                risk_score=a["risk_score"],
+            )
+            sentinel.record_event(event)
 
-    # 3. Git
+    # Check production code changed but tests didn't
+    prod_changed = [a for a in analyses if a.get("category") in ("core", "frontend", "agent") and a.get("type") == "MODIFIED"]
+    test_changed = [a for a in analyses if a.get("category") == "test"]
+    if prod_changed and not test_changed:
+        event = SentinelEvent(
+            event_type="test_gap",
+            severity=Severity.WARNING,
+            source="file_monitor",
+            component="testing",
+            message=f"Production code changed ({len(prod_changed)} files) but no tests changed",
+            risk_score=45,
+        )
+        sentinel.record_event(event)
+
+    # 4. Secret scanning
+    log("Scanning for secrets...")
+    secret_issues = scan_for_secrets(PROJECT, changes if changes else None)
+    if secret_issues:
+        log(f"  🛡️ {len(secret_issues)} potential secret(s) found")
+        for issue in secret_issues:
+            event = SentinelEvent(
+                event_type="secret_detected",
+                severity=Severity.SECURITY,
+                source="secret_scanner",
+                component=issue["file"],
+                message=f"Potential {issue['type']} detected",
+                details={"line": issue["line"], "type": issue["type"]},
+                risk_score=80,
+            )
+            sentinel.record_event(event)
+            sentinel.maybe_create_incident(event)
+
+    # 5. Git
     log("Checking git status...")
     git_info = git_analysis()
 
-    # 4. Python syntax
+    # 6. Python syntax
     log("Checking Python syntax...")
     syntax = check_python_syntax()
     if syntax["errors"]:
         log(f"  ❌ {len(syntax['errors'])} syntax errors found")
+        for err in syntax["errors"][:3]:
+            event = SentinelEvent(
+                event_type="syntax_error",
+                severity=Severity.WARNING,
+                source="syntax_checker",
+                component=err["file"],
+                message=f"Syntax error: {err['error'][:100]}",
+                risk_score=20,
+            )
+            sentinel.record_event(event)
 
-    # 5. Docker
+    # 7. Docker
     log("Checking Docker...")
     docker = docker_check()
+    if not docker.get("healthy"):
+        event = SentinelEvent(
+            event_type="docker_unhealthy",
+            severity=Severity.CRITICAL,
+            source="docker_monitor",
+            component="docker",
+            message="Docker container unhealthy",
+            risk_score=75,
+        )
+        sentinel.record_event(event)
+        sentinel.maybe_create_incident(event)
 
-    # 6. API
+    # 8. API
     log("Checking API...")
     api = api_health()
+    if not api.get("healthy"):
+        event = SentinelEvent(
+            event_type="api_down",
+            severity=Severity.CRITICAL,
+            source="api_monitor",
+            component="api",
+            message="API not responding",
+            risk_score=70,
+        )
+        sentinel.record_event(event)
+        sentinel.maybe_create_incident(event)
 
-    # 7. Regression tests
+    # 9. Smart regression test execution
     log("Running regression tests...")
     regression = run_regression_tests()
     log(f"  Regression: {regression['passed']} PASS, {regression['failed']} FAIL")
+    sentinel.trends.record("regression_pass", regression["passed"])
+    sentinel.trends.record("regression_fail", regression["failed"])
 
-    # 8. P1 regression
+    # Check regression trend
+    prev_fail = sentinel.trends.get_baseline("regression_fail", window=3)
+    if prev_fail is not None and regression["failed"] > prev_fail and regression["failed"] > 0:
+        event = SentinelEvent(
+            event_type="regression_detected",
+            severity=Severity.IMPORTANT,
+            source="test_runner",
+            component="regression",
+            message=f"Regression detected: {regression['failed']} failures (baseline: {prev_fail:.0f})",
+            risk_score=65,
+        )
+        sentinel.record_event(event)
+        sentinel.maybe_create_incident(event)
+
+    # 10. P1 regression
     log("Checking P1 regression...")
     p1 = check_p1_regression()
     for name, data in p1.items():
@@ -750,25 +883,94 @@ def run_watchdog():
             fail = data.get("fail", 0)
             if fail > 0:
                 log(f"  ❌ P1 REGRESSION: {name} ({fail} failures)")
+                event = SentinelEvent(
+                    event_type="p1_regression",
+                    severity=Severity.CRITICAL,
+                    source="p1_checker",
+                    component=name,
+                    message=f"P1 regression: {name} ({fail} failures)",
+                    risk_score=85,
+                )
+                sentinel.record_event(event)
+                sentinel.maybe_create_incident(event)
             else:
                 log(f"  ✅ P1 OK: {name}")
 
-    # 9. Human-use test
+    # 11. Human-use test
     log("Running human-use scenarios...")
     human_use = human_use_test()
     log(f"  Human-use: {human_use.get('pass', 0)}/{human_use.get('total', 0)} PASS")
+    hu_failed = human_use.get("total", 0) - human_use.get("pass", 0)
+    if hu_failed > 0:
+        event = SentinelEvent(
+            event_type="human_use_failure",
+            severity=Severity.WARNING,
+            source="human_use_test",
+            component="intent_routing",
+            message=f"Human-use test failures: {hu_failed}/{human_use.get('total', 0)}",
+            risk_score=40,
+        )
+        sentinel.record_event(event)
 
-    # 10. Security
+    # 12. Security
     log("Running security check...")
     security = security_check()
 
-    # 11. Build report
-    report, status_icon, status = build_report(
-        changes, analyses, git_info, syntax, docker,
-        api, regression, p1, human_use, security, start_time
+    # 13. Calculate health score
+    health = calculate_health_score(
+        docker_healthy=docker.get("healthy", False),
+        api_healthy=api.get("healthy", False),
+        regression_passed=regression.get("passed", 0),
+        regression_failed=regression.get("failed", 0),
+        p1_failed=sum(1 for v in p1.values() if isinstance(v, dict) and v.get("fail", 0) > 0),
+        human_use_failed=hu_failed,
+        syntax_errors=len(syntax.get("errors", [])),
+        security_issues=len(security.get("issues", [])),
+        critical_changes=len(critical),
+        high_risk_changes=len(high_risk),
+        ram_percent=resources.get("ram_percent", 0),
+        disk_percent=resources.get("disk_percent", 0),
     )
+    log(f"  Health Score: {health.overall}/100 ({health.level})")
+    sentinel.trends.record("health_score", health.overall)
 
-    # 12. Save report
+    # 14. Build report
+    duration = (datetime.now() - start_time).total_seconds()
+    timestamp = start_time.isoformat()
+
+    report = {
+        "timestamp": timestamp,
+        "duration_seconds": round(duration, 1),
+        "health_score": health.to_dict(),
+        "resources": resources,
+        "changes": {
+            "total": len(changes),
+            "new": sum(1 for c in changes if c["type"] == "NEW"),
+            "modified": sum(1 for c in changes if c["type"] == "MODIFIED"),
+            "deleted": sum(1 for c in changes if c["type"] == "DELETED"),
+            "critical_files": [c["path"] for c in changes if c["path"] in CRITICAL_FILES],
+        },
+        "analysis": {
+            "total": len(analyses),
+            "critical": len(critical),
+            "high_risk": len(high_risk),
+            "details": analyses[:20],
+        },
+        "git": git_info,
+        "python_syntax": syntax,
+        "docker": {"healthy": docker.get("healthy", False)},
+        "api": {"healthy": api.get("healthy", False)},
+        "regression": regression,
+        "p1_regression": p1,
+        "human_use": human_use,
+        "security": security,
+        "secrets": secret_issues,
+        "self_monitor": sentinel.self_monitor.to_dict(),
+        "incidents": [inc.to_dict() for inc in sentinel.incidents.get_recent_incidents(24)],
+        "events_count": len(sentinel.get_recent_events(1)),
+    }
+
+    # 15. Save report
     REPORT_DIR.mkdir(parents=True, exist_ok=True)
     ts = start_time.strftime("%Y%m%d_%H%M%S")
     report_file = REPORT_DIR / f"watchdog_{ts}.json"
@@ -776,23 +978,38 @@ def run_watchdog():
         json.dump(report, f, indent=2, ensure_ascii=False)
     log(f"Report saved: {report_file}")
 
-    # 13. Telegram
-    telegram_msg = format_telegram_message(report, status_icon, status)
+    # 16. Telegram
+    telegram_msg = format_sentinel_report(
+        health=health,
+        resources=resources,
+        events=sentinel.get_recent_events(1),
+        incidents=sentinel.incidents.get_recent_incidents(24),
+        changes=analyses,
+        regression=regression,
+        p1=p1,
+        human_use=human_use,
+        security_issues=security.get("issues", []),
+        syntax_result=syntax,
+        self_health=self_health,
+        duration=duration,
+        timestamp=timestamp,
+    )
     tg_ok, tg_err = send_telegram(telegram_msg)
     if tg_ok:
         log("✅ Telegram message sent")
     else:
-        log(f"⚠️ Telegram failed: {tg_err}")
-        # Log to file
+        log(f"⚠️ Telegram: {tg_err}")
         err_log = REPORT_DIR / "telegram_errors.log"
         with open(err_log, "a") as f:
             f.write(f"{datetime.now()}: {tg_err}\n")
 
-    # 14. Save snapshot (only after successful scan)
+    # 17. Save snapshot
     save_snapshot(new_snapshot)
-    log("Snapshot saved")
 
-    log(f"Watchdog completed in {report['duration_seconds']}s — Status: {status}")
+    # 18. Record self-monitor success
+    sentinel.self_monitor.record_success(duration)
+
+    log(f"SENTINEL completed in {duration:.0f}s — Health: {health.overall}/100 ({health.level})")
     return report
 
 

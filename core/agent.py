@@ -388,6 +388,15 @@ def run_agent(
 
             eylem_tamamla(aid, answer[:500], True, 0)
             finish_task(task_id, step + 1, "COMPLETED", answer)
+            # Proactive Telegram notification
+            if is_chat and context and context.get("channel") in ("telegram", "telegram_user"):
+                try:
+                    from core.telegram_user_adapter import get_telegram_user_adapter
+                    tg = get_telegram_user_adapter()
+                    if tg.is_active():
+                        tg.notify_task_complete(task_id, answer, context.get("telegram_chat_id"))
+                except Exception:
+                    pass
             _log_markdown(
                 "Agent görevi tamamlandı",
                 f"- Task ID: `{task_id}`\n- Adım: {step + 1}\n- Workspace: `{active}`\n- Sonuç:\n{answer[:4000]}",
@@ -404,6 +413,15 @@ def run_agent(
         raise RuntimeError(f"Agent adım limiti doldu ({max_steps}).")
     except Exception as exc:
         eylem_hata(aid, str(exc))
+        # Proactive error notification
+        if context and context.get("channel") in ("telegram", "telegram_user"):
+            try:
+                from core.telegram_user_adapter import get_telegram_user_adapter
+                tg = get_telegram_user_adapter()
+                if tg.is_active():
+                    tg.notify_error(str(exc), request[:200], context.get("telegram_chat_id"))
+            except Exception:
+                pass
         _log_markdown("Agent hatası", f"- Workspace: `{active}`\n- Hata: `{exc}`")
         return f"Agent hatası: {exc}"
 

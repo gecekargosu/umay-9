@@ -916,6 +916,104 @@ CODE_TOOLS = [
         }, "required": ["request"]}}},
 ]
 
+# ─── Aider Integration Tool ─────────────────────────────────────────────────
+
+def aider_edit(files: str, instructions: str, message: str = "") -> dict[str, Any]:
+    """Aider ile multi-file edit yap. Aider kurulu degilse hata doner.
+    
+    Args:
+        files: Virgullu dosya yollari (ornek: 'core/engine.py,core/agent.py')
+        instructions: Ne yapilacagi (ornek: 'Bu fonksiyona timeout ekle')
+        message: Commit mesaji (opsiyonel)
+    """
+    import shutil
+    aider_bin = shutil.which('aider')
+    if not aider_bin:
+        # pip ile kurulu olabilir
+        try:
+            import subprocess
+            result = subprocess.run([sys.executable, '-m', 'aider', '--version'], 
+                                  capture_output=True, text=True, timeout=10)
+            if result.returncode == 0:
+                aider_bin = sys.executable
+                aider_args = ['-m', 'aider']
+            else:
+                return {"error": "Aider kurulu degil. pip install aider-chat ile kurun.", "status": "ERROR"}
+        except Exception:
+            return {"error": "Aider kurulu degil. pip install aider-chat ile kurun.", "status": "ERROR"}
+    else:
+        aider_args = []
+    
+    # Gecici dosya olustur
+    import tempfile
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False, encoding='utf-8') as f:
+        f.write(instructions)
+        prompt_file = f.name
+    
+    try:
+        # Aider komutu
+        cmd = [aider_bin] + aider_args
+        cmd += ['--file', files]
+        cmd += ['--message', instructions]
+        if message:
+            cmd += ['--commit-message', message]
+        cmd += ['--yes']  # Onay otomatik
+        cmd += ['--no-git']  # Git commit otomatik olmasin
+        
+        aid = eylem_baslat("aider", f"Aider edit: {files}", instructions[:100], "")
+        started = time.time()
+        
+        result = subprocess.run(
+            cmd, cwd=str(ACTIVE_WORKSPACE),
+            capture_output=True, text=True,
+            timeout=300, encoding='utf-8', errors='replace'
+        )
+        
+        duration = time.time() - started
+        
+        if result.returncode == 0:
+            eylem_tamamla(aid, f"Aider basarili ({duration:.1f}s)", True, duration)
+            return {
+                "status": "PASS",
+                "files": files,
+                "output": result.stdout[-5000:] if result.stdout else "",
+                "duration_s": round(duration, 2)
+            }
+        else:
+            eylem_hata(aid, result.stderr[-2000:] if result.stderr else "Unknown error")
+            return {
+                "status": "FAIL",
+                "error": result.stderr[-2000:] if result.stderr else "Aider basarisiz",
+                "output": result.stdout[-2000:] if result.stdout else "",
+                "duration_s": round(duration, 2)
+            }
+    except subprocess.TimeoutExpired:
+        return {"error": "Aider 300 saniye sure asimi", "status": "TIMEOUT"}
+    except Exception as e:
+        return {"error": str(e), "status": "ERROR"}
+    finally:
+        try:
+            Path(prompt_file).unlink(missing_ok=True)
+        except Exception:
+            pass
+
+
+# Aider tool tanimi
+AIDER_TOOLS = [
+    {"type": "function", "function": {
+        "name": "aider_edit",
+        "description": "Aider ile multi-file edit yapar. Birden fazla dosyayi ayni anda duzenler.",
+        "parameters": {"type": "object", "properties": {
+            "files": {"type": "string", "description": "Virgullu dosya yollari"},
+            "instructions": {"type": "string", "description": "Ne yapilacagi"},
+            "message": {"type": "string", "description": "Commit mesaji"}
+        }, "required": ["files", "instructions"]}}},
+]
+
+# Aider tool'larini TOOLS listesine ekle
+TOOLS.extend(AIDER_TOOLS)
+
+
 # Code tool'lari TOOLS listesine ekle
 TOOLS.extend(CODE_TOOLS)
 

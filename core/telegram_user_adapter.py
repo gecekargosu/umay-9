@@ -345,6 +345,71 @@ class TelegramUserAdapter:
                 self._outgoing_msg_ids.add(msg.id)
         log(f"[TELEGRAM_USER] RESPONSE_SENT: chat={chat_id}")
 
+    # ─── Proactive Notifications ─────────────────────────────────────────
+
+    def notify_task_complete(self, task_id: str, result: str, chat_id: int | None = None):
+        """Görev tamamlandığında otomatik bildirim gönder."""
+        if not chat_id:
+            # İlk yetkili chat ID'sini kullan
+            if self.allowed_chats:
+                chat_id = next(iter(self.allowed_chats))
+            elif self.allowed_users:
+                chat_id = next(iter(self.allowed_users))
+            else:
+                return
+        if not self.is_active() or not self._loop:
+            return
+        msg = f"✅ Görev tamamlandı\n\n📋 Task: {task_id}\n\n📊 Sonuç:\n{str(result)[:2000]}"
+        future = asyncio.run_coroutine_threadsafe(
+            self._send_text(chat_id, msg), self._loop
+        )
+        try:
+            future.result(timeout=30)
+        except Exception as exc:
+            log(f"[TELEGRAM_USER] Notify hatası: {type(exc).__name__}")
+
+    def notify_error(self, error: str, context: str = "", chat_id: int | None = None):
+        """Hata oluştuğunda otomatik bildirim gönder."""
+        if not chat_id:
+            if self.allowed_chats:
+                chat_id = next(iter(self.allowed_chats))
+            elif self.allowed_users:
+                chat_id = next(iter(self.allowed_users))
+            else:
+                return
+        if not self.is_active() or not self._loop:
+            return
+        msg = f"❌ Hata oluştu\n\n🔴 Hata: {error}"
+        if context:
+            msg += f"\n📝 Bağlam: {context}"
+        future = asyncio.run_coroutine_threadsafe(
+            self._send_text(chat_id, msg), self._loop
+        )
+        try:
+            future.result(timeout=30)
+        except Exception as exc:
+            log(f"[TELEGRAM_USER] Error notify hatası: {type(exc).__name__}")
+
+    def notify_progress(self, message: str, chat_id: int | None = None):
+        """İlerleme durumu hakkında bildirim gönder."""
+        if not chat_id:
+            if self.allowed_chats:
+                chat_id = next(iter(self.allowed_chats))
+            elif self.allowed_users:
+                chat_id = next(iter(self.allowed_users))
+            else:
+                return
+        if not self.is_active() or not self._loop:
+            return
+        msg = f"⏳ İlerleme\n\n{message}"
+        future = asyncio.run_coroutine_threadsafe(
+            self._send_text(chat_id, msg), self._loop
+        )
+        try:
+            future.result(timeout=30)
+        except Exception as exc:
+            log(f"[TELEGRAM_USER] Progress notify hatası: {type(exc).__name__}")
+
 
 _user_adapter: TelegramUserAdapter | None = None
 

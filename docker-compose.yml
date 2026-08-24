@@ -34,7 +34,7 @@ services:
     environment:
       # Ollama — host.docker.internal üzerinden host'a erişim
       - OLLAMA_URL=http://host.docker.internal:11434
-      - UMAY_MODE=auto_fix
+      - UMAY_MODE=approval
       - PYTHONPATH=/app
       # Telegram (opsiyonel — .env dosyasından okunur)
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}

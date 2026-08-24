@@ -222,15 +222,17 @@ def run_agent(
     is_chat = context and context.get("channel") in ("telegram", "telegram_user")
     
     # Intent sınıflandırması
+    Intent = None  # type: ignore
     try:
         from core.intent_router import classify_intent, get_available_tools as intent_tools, Intent
         intent = classify_intent(request)
-    except ImportError:
-        intent = Intent.CHAT if is_chat else None
+    except (ImportError, Exception):
+        intent = "chat" if is_chat else None
     
     # Intent'e göre system prompt seçimi
     if is_chat:
-        if intent in (Intent.CHAT, Intent.KNOWLEDGE):
+        _chat_intents = ("chat", "knowledge") if Intent is None else (Intent.CHAT, Intent.KNOWLEDGE)
+        if intent in _chat_intents:
             system_prompt = CHAT_IDENTITY
         else:
             # ACTION/TIME/FILE/DOCUMENT/VISION/WEB/CODE/TERMINAL/COMPLEX

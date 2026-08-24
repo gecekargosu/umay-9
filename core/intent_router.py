@@ -356,28 +356,40 @@ def get_model_preference(intent: Intent) -> str:
     return MODEL_MAP.get(intent, "chat")
 
 
+_network_cache = {"status": None, "last_check": 0}
+_NETWORK_CACHE_TTL = 10  # seconds
+
+
 def check_network() -> str:
-    """İnternet bağlantısını kontrol et.
+    """İnternet bağlantısını kontrol et. 10sn cache ile.
 
     Returns:
         "online", "offline", "degraded"
     """
-    import socket
+    import socket, time
+    now = time.time()
+    if _network_cache["status"] is not None and (now - _network_cache["last_check"]) < _NETWORK_CACHE_TTL:
+        return _network_cache["status"]
+
     try:
-        # DNS lookup test
         socket.create_connection(("8.8.8.8", 53), timeout=3)
+        _network_cache["status"] = "online"
+        _network_cache["last_check"] = now
         return "online"
     except (socket.timeout, OSError):
         pass
 
     try:
-        # HTTP test
         import urllib.request
         urllib.request.urlopen("http://www.google.com", timeout=3)
+        _network_cache["status"] = "online"
+        _network_cache["last_check"] = now
         return "online"
     except Exception:
         pass
 
+    _network_cache["status"] = "offline"
+    _network_cache["last_check"] = now
     return "offline"
 
 

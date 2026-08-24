@@ -13,6 +13,7 @@ from urllib.parse import quote_plus
 from typing import Any
 
 from core.utils.action_logger import eylem_baslat, eylem_tamamla, eylem_hata
+from core.utils.logger import log
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 ACTIVE_WORKSPACE = Path(os.getenv("UMAY_WORKSPACE", str(PROJECT_ROOT))).resolve()
@@ -398,9 +399,6 @@ def open_with_app(app_name: str, path: str) -> dict[str, Any]:
 
 
 # ─── System Clock / Date Tools ────────────────────────────────────────────────
-
-import platform
-import subprocess
 
 
 def get_current_time(timezone: str = "Europe/Istanbul") -> dict[str, Any]:

@@ -88,7 +88,6 @@ class TaskExecutor:
             except TaskCancelledException:
                 log(f"[EXECUTOR] Task cancelled: {task_id}")
                 self._set_status(task_id, "CANCELLED")
-                log(f"[EXECUTOR-DBG] cancelled path, captured_result={captured_result}")
                 if on_status:
                     on_status(task_id, "cancelled", f"Task iptal edildi: {task_id}")
                 self._finish(task_id, "CANCELLED", {"cancelled": True})
@@ -96,7 +95,6 @@ class TaskExecutor:
                     on_complete(task_id, {"status": "CANCELLED"})
             except Exception as exc:
                 log(f"[EXECUTOR] Task error: {task_id} -- {exc}")
-                log(f"[EXECUTOR-DBG] error path, captured_result={captured_result}")
                 self._set_status(task_id, "ERROR")
                 if on_status:
                     on_status(task_id, "error", f"Task hatasi: {exc}")

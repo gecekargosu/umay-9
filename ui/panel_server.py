@@ -574,12 +574,19 @@ def _format_tool_result(last_result, tool_name=None):
     if "date" in rdata:
         return "Tarih: " + str(rdata["date"])
 
-    # File listing
-    if "entries" in rdata:
-        entries = rdata["entries"]
+    # File listing (list_directory / search_files output)
+    entries = rdata.get("entries") or rdata.get("shown_entries") or []
+    if entries:
         count = rdata.get("count", len(entries))
-        listing = chr(10).join(["  " + e["path"] + " (" + e["type"] + ")" for e in entries[:20]])
-        return str(count) + " dosya/klasor bulundu:" + chr(10) + listing
+        truncated = rdata.get("truncated", False)
+        shown = min(20, len(entries))
+        listing = chr(10).join(["  " + e["path"] + " (" + e["type"] + ")" for e in entries[:shown]])
+        header = str(count) + " dosya/klasor bulundu"
+        if truncated:
+            header += " (toplam " + str(rdata.get("original_chars", count)) + ")"
+        if shown < count:
+            header += " — ilk " + str(shown) + " tanesi gosteriliyor"
+        return header + ":" + chr(10) + listing
 
     # File content
     if "content" in rdata:
@@ -746,6 +753,17 @@ def execute_chat_task(task_id, session_id, soru, attachments, *, on_status=None,
         _system_prompt = _CHAT_IDENTITY
     else:
         _system_prompt = _UMAY_SYSTEM
+
+    # ── MEMORY/RAG INJECTION ──
+    # Inject relevant memories into system prompt for context-aware responses
+    try:
+        from core.memory.memory_bridge import recall
+        _memories = recall(soru, limit=3)
+        if _memories:
+            _memory_context = "\nHafızamdaki ilgili bilgiler:\n" + "\n".join(f"  - {m}" for m in _memories)
+            _system_prompt = _system_prompt + "\n" + _memory_context
+    except Exception:
+        pass  # Memory is optional — don't break chat if unavailable
 
     # ── DIRECT TOOL EXECUTION (TIME/CALCULATOR/FILE/DOCUMENT/WEB/TERMINAL) ──
     # These tools are deterministic and don't need LLM involvement
@@ -1304,6 +1322,18 @@ def execute_chat_task(task_id, session_id, soru, attachments, *, on_status=None,
             check_cancel(task_id)
             check_pause(task_id)
 
+            # ── FAST PATH: skip second LLM call for single-step tools ──
+            # Tools like list_directory, calculator, time, web_search already produce
+            # complete results. No need for a second 40-60s model call.
+            _SINGLE_STEP_TOOLS = {'list_directory', 'calculator', 'get_current_time',
+                                  'get_current_date', 'web_search', 'process_list',
+                                  'search_files', 'read_file'}
+            _only_one_tool = len(tool_calls) <= 1
+            if _only_one_tool and func_name in _SINGLE_STEP_TOOLS:
+                last_result = tool_msgs[-1].get("content", "") if tool_msgs else ""
+                cevap = _format_tool_result(last_result, last_tool_name)
+                break
+
             # If this was the last allowed step, format whatever we have
             if _tool_step == MAX_TOOL_STEPS - 1:
                 last_result = tool_msgs[-1].get("content", "") if tool_msgs else ""
@@ -1343,6 +1373,16 @@ def execute_chat_task(task_id, session_id, soru, attachments, *, on_status=None,
             resp_data["usage"] = tool_usage
         if on_complete:
             on_complete(task_id, resp_data)
+
+        # ── MEMORY LEARNING ──
+        # Learn important facts from user messages
+        try:
+            from core.memory.memory_bridge import learn
+            _learn_keywords = ['hatırla', 'hatirla', 'kaydet', 'unutma', 'biliyorum', 'önemli', 'not al']
+            if any(kw in soru.lower() for kw in _learn_keywords):
+                learn(soru, source="user_chat")
+        except Exception:
+            pass
 
     else:
         # ── SIMPLE CHAT PATH (no tools) ──

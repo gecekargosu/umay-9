@@ -709,6 +709,63 @@ def format_telegram_message(report, status_icon, status):
     return "\n".join(lines)
 
 
+# ─── Auto-Recovery ──────────────────────────────────────────
+
+def try_auto_recovery(reason: str) -> dict:
+    """Safe auto-recovery: only restarts Docker container.
+
+    NEVER: deletes files, modifies code, changes secrets, or runs arbitrary commands.
+    ONLY: docker compose restart (safe, reversible).
+    """
+    MAX_RECOVERY_ATTEMPTS = 2  # Don't loop forever
+    state_file = STATE_DIR / "recovery_state.json"
+
+    # Load recovery state
+    state = {"attempts": {}, "last_recovery": {}}
+    try:
+        if state_file.exists():
+            with open(state_file, "r") as f:
+                state = json.load(f)
+    except (json.JSONDecodeError, OSError):
+        pass
+
+    # Check attempt count
+    today = datetime.now().strftime("%Y%m%d")
+    key = f"{reason}_{today}"
+    attempts = state.get("attempts", {}).get(key, 0)
+    if attempts >= MAX_RECOVERY_ATTEMPTS:
+        return {"success": False, "error": f"Max recovery attempts ({MAX_RECOVERY_ATTEMPTS}) reached for {reason} today"}
+
+    # Check cooldown: don't recover more than once per 10 minutes
+    last = state.get("last_recovery", {}).get(reason)
+    if last:
+        try:
+            last_time = datetime.fromisoformat(last)
+            if (datetime.now() - last_time).total_seconds() < 600:
+                return {"success": False, "error": f"Recovery cooldown active for {reason} (10min)"}
+        except (ValueError, TypeError):
+            pass
+
+    # Execute recovery: docker compose restart
+    log(f"  🔧 AUTO-RECOVERY: Attempting restart (reason={reason}, attempt={attempts+1})")
+    out, err, rc = run_cmd("docker compose restart", timeout=60)
+    success = rc == 0
+
+    # Update state
+    state.setdefault("attempts", {})[key] = attempts + 1
+    state.setdefault("last_recovery", {})[reason] = datetime.now().isoformat()
+    STATE_DIR.mkdir(parents=True, exist_ok=True)
+    with open(state_file, "w") as f:
+        json.dump(state, f, indent=2)
+
+    if success:
+        log(f"  ✅ AUTO-RECOVERY: docker compose restart succeeded")
+    else:
+        log(f"  ❌ AUTO-RECOVERY: docker compose restart failed: {err[:200]}")
+
+    return {"success": success, "output": out[:500], "error": err[:500] if not success else ""}
+
+
 # ─── Main ────────────────────────────────────────────────────
 
 def run_watchdog():
@@ -839,6 +896,22 @@ def run_watchdog():
         )
         sentinel.record_event(event)
         sentinel.maybe_create_incident(event)
+        # ── SAFE AUTO-RECOVERY: restart Docker container ──
+        recovery_result = try_auto_recovery("docker")
+        if recovery_result.get("success"):
+            # Re-check after recovery
+            docker_after = docker_check()
+            if docker_after.get("healthy"):
+                log("  ✅ AUTO-RECOVERY: Docker restarted successfully")
+                # Resolve the incident
+                for inc in sentinel.incidents.get_open_incidents():
+                    if "docker" in inc.title.lower():
+                        inc.resolve()
+                        sentinel.incidents._save()
+            else:
+                log("  ❌ AUTO-RECOVERY: Docker still unhealthy after restart")
+        else:
+            log(f"  ⚠️ AUTO-RECOVERY: {recovery_result.get('error', 'unknown error')}")
 
     # 8. API
     log("Checking API...")
@@ -854,6 +927,22 @@ def run_watchdog():
         )
         sentinel.record_event(event)
         sentinel.maybe_create_incident(event)
+        # ── SAFE AUTO-RECOVERY: restart Docker if API is down ──
+        recovery_result = try_auto_recovery("api")
+        if recovery_result.get("success"):
+            import time as _time
+            _time.sleep(5)  # Wait for restart
+            api_after = api_health()
+            if api_after.get("healthy"):
+                log("  ✅ AUTO-RECOVERY: API back online after restart")
+                for inc in sentinel.incidents.get_open_incidents():
+                    if "api" in inc.title.lower():
+                        inc.resolve()
+                        sentinel.incidents._save()
+            else:
+                log("  ❌ AUTO-RECOVERY: API still down after restart")
+        else:
+            log(f"  ⚠️ AUTO-RECOVERY: {recovery_result.get('error', 'unknown error')}")
 
     # 9. Smart regression test execution
     log("Running regression tests...")

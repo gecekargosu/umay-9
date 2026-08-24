@@ -163,6 +163,16 @@ def _normalize_tool_paths(args: dict) -> dict:
                 docker_base = _win_to_docker.get('/' + folder)
                 if docker_base:
                     normalized[key] = docker_base
+            # Bare folder name: "Desktop" → /host/Desktop
+            _bare_folders = {
+                'desktop': '/host/Desktop', 'documents': '/host/Documents',
+                'downloads': '/host/Downloads', 'masaustu': '/host/Desktop',
+                'masaüstü': '/host/Desktop', 'belgeler': '/host/Documents',
+                'indirilenler': '/host/Downloads',
+            }
+            val_lower = val.strip().lower()
+            if val_lower in _bare_folders and os.path.exists(_bare_folders[val_lower]):
+                normalized[key] = _bare_folders[val_lower]
     return normalized
 
 

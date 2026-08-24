@@ -37,6 +37,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     # General tools
     git \
     curl \
+    procps \
     # Clean up
     && rm -rf /var/lib/apt/lists/*
 

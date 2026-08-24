@@ -485,6 +485,40 @@ def _format_tool_result(last_result, tool_name=None):
         ])
         return chr(128269) + " " + str(count) + " arama sonucu (" + query + "):" + chr(10) + chr(10) + listing
 
+    # Process list (tasklist CSV or ps aux output)
+    if "status" in rdata and "output" in rdata and "stdout" not in rdata:
+        raw = rdata.get("output", "").strip()
+        if not raw:
+            return "Surec listesi bos."
+        try:
+            import csv as _csv, io as _io
+            reader = _csv.reader(_io.StringIO(raw))
+            rows = list(reader)
+            if rows and len(rows[0]) >= 3:
+                lines = ["  " + "Surec".ljust(30) + "PID".ljust(10) + "Bellek".ljust(12) + "Durum"]
+                lines.append("  " + "-" * 60)
+                for row in rows[:25]:
+                    if len(row) >= 5:
+                        lines.append("  " + row[0][:28].ljust(30) + row[1].ljust(10) + row[4][:10].ljust(12) + row[2])
+                return "[AKTIF] Aktif Surecler (" + str(min(25, len(rows))) + "/" + str(len(rows)) + "):" + chr(10) + chr(10) + chr(10).join(lines)
+        except Exception:
+            pass
+        # ps aux format detection (space-separated, starts with USER)
+        lines = raw.split(chr(10))
+        if lines and lines[0].startswith("USER"):
+            parsed = []
+            for line in lines[1:26]:
+                parts = line.split(None, 10)
+                if len(parts) >= 11:
+                    user, pid, cpu, mem, vsz, rss, tty, stat, start, time, cmd = parts
+                    parsed.append("  " + cmd[:28].ljust(30) + pid.ljust(10) + (rss + " KB").ljust(12) + stat)
+            if parsed:
+                total = len(lines) - 1
+                header = "  " + "Surec".ljust(30) + "PID".ljust(10) + "Bellek".ljust(12) + "Durum"
+                return "[AKTIF] Aktif Surecler (" + str(min(25, total)) + "/" + str(total) + "):" + chr(10) + chr(10) + header + chr(10) + "  " + "-" * 60 + chr(10) + chr(10).join(parsed)
+        # Fallback
+        return "Surec ciktisi:" + chr(10) + "```" + chr(10) + raw[:600] + chr(10) + "```"
+
     # Terminal/command result
     if "stdout" in rdata:
         stdout = rdata.get("stdout", "")[:800]
@@ -828,28 +862,30 @@ def execute_chat_task(task_id, session_id, soru, attachments, *, on_status=None,
                             import re as _re
                             _cmd = soru.strip()
                             # 1. Natural Turkish → Windows command mapping
+                            import os as _os
+                            _is_linux = _os.name != 'nt' or _os.path.exists('/.dockerenv') or _os.path.exists('/proc/1/cgroup')
                             _cmd_map = [
                                 (r'hostname', 'hostname'),
-                                (r'ipconfig|ip adres', 'ipconfig'),
-                                (r'mac adres|mac address', 'getmac'),
-                                (r'ekran kart|gpu|grafik kart|display adapter', 'wmic path win32_videocontroller get name'),
-                                (r'ram (?:kac|kaç|ne kadar|miktar|boyut)', 'wmic memorychip get capacity'),
-                                (r'ram (?:kullanim|kullanım|yüzde|oran)', 'wmic os get freephysicalmemory,totalvisiblememorysize /value'),
-                                (r'cpu|islemci|işlemci|processo', 'wmic cpu get name'),
-                                (r'disk (?:boyut|kapasite|alan|doluluk|bos)', 'wmic logicaldisk get size,freespace,caption'),
-                                (r'disk list|disk listele', 'wmic logicaldisk get caption,size,freespace'),
-                                (r'kullanici|kullanıcı|user', 'net user'),
-                                (r'port|baglanti port|socket', 'netstat -an'),
-                                (r'wifi|wireless|kablosuz', 'netsh wlan show interfaces'),
-                                (r'surucu|sürücü|driver', 'driverquery'),
-                                (r'surec|process|task manager', 'tasklist /v /fo csv | head -20'),
-                                (r'sistem bilgi|bilgisayar bilgi|pc bilgi', 'systeminfo'),
-                                (r'tarih ve saat|bugunun tarihi', 'echo %date% %time%'),
-                                (r'klasor list|dosya list|folder list|directory', 'dir /b'),
-                                (r'dir(\s|$)', 'dir'),
-                                (r'ls(\s|$)', 'dir /b'),
-                                (r'type(\s|$)', 'type'),
-                                (r'ping(\s|$)', 'ping localhost'),
+                                (r'ipconfig|ip adres', 'ipconfig' if not _is_linux else 'ip addr show'),
+                                (r'mac adres|mac address', 'getmac' if not _is_linux else 'ip link show'),
+                                (r'ekran kart|gpu|grafik kart|display adapter', 'wmic path win32_videocontroller get name' if not _is_linux else 'lspci | grep -i vga'),
+                                (r'ram (?:kac|kaç|ne kadar|miktar|boyut)', 'wmic memorychip get capacity' if not _is_linux else 'free -h'),
+                                (r'ram (?:kullanim|kullanım|yüzde|oran)', 'wmic os get freephysicalmemory,totalvisiblememorysize /value' if not _is_linux else 'free -h'),
+                                (r'cpu|islemci|işlemci|processo', 'wmic cpu get name' if not _is_linux else 'lscpu | head -10'),
+                                (r'disk (?:boyut|kapasite|alan|doluluk|bos)', 'wmic logicaldisk get size,freespace,caption' if not _is_linux else 'df -h'),
+                                (r'disk list|disk listele', 'wmic logicaldisk get caption,size,freespace' if not _is_linux else 'lsblk'),
+                                (r'kullanici|kullanıcı|user', 'net user' if not _is_linux else 'whoami && id'),
+                                (r'port|baglanti port|socket', 'netstat -an' if not _is_linux else 'ss -tuln'),
+                                (r'wifi|wireless|kablosuz', 'netsh wlan show interfaces' if not _is_linux else 'iwconfig 2>/dev/null || ip link show'),
+                                (r'surucu|sürücü|driver', 'driverquery' if not _is_linux else 'lsmod'),
+                                (r'surec|process|task manager', 'tasklist /v /fo csv | head -20' if not _is_linux else 'ps aux --sort=-pcpu | head -25'),
+                                (r'sistem bilgi|bilgisayar bilgi|pc bilgi', 'systeminfo' if not _is_linux else 'uname -a && cat /etc/os-release'),
+                                (r'tarih ve saat|bugunun tarihi', 'echo %date% %time%' if not _is_linux else 'date'),
+                                (r'klasor list|dosya list|folder list|directory', 'dir /b' if not _is_linux else 'ls -la'),
+                                (r'dir(\s|$)', 'dir' if not _is_linux else 'ls -la'),
+                                (r'ls(\s|$)', 'dir /b' if not _is_linux else 'ls'),
+                                (r'type(\s|$)', 'type' if not _is_linux else 'cat'),
+                                (r'ping(\s|$)', 'ping localhost' if not _is_linux else 'ping -c 3 localhost'),
                             ]
                             _soru_lower = _cmd.lower().strip()
                             _matched = False
@@ -990,8 +1026,38 @@ def execute_chat_task(task_id, session_id, soru, attachments, *, on_status=None,
                         # System info
                         result_parts.append("Sistem: " + r.get("os","?") + " / " + r.get("platform","?") + " | Python: " + str(r.get("python_version","?"))[:30] + " | CWD: " + r.get("cwd","?"))
                     elif "output" in r and "status" in r:
-                        # Process list
-                        result_parts.append("Aktif surecler:" + chr(10) + chr(10) + "```" + chr(10) + r.get("output","")[:500] + chr(10) + "```")
+                        # Process list — parse CSV (Windows) or ps aux (Linux)
+                        _raw = r.get("output", "").strip()
+                        _formatted = False
+                        try:
+                            import csv as _csv2, io as _io2
+                            _reader = _csv2.reader(_io2.StringIO(_raw))
+                            _rows = list(_reader)
+                            if _rows and len(_rows[0]) >= 3:
+                                _lines = ["  " + "Surec".ljust(30) + "PID".ljust(10) + "Bellek".ljust(12) + "Durum"]
+                                _lines.append("  " + "-" * 60)
+                                for _row in _rows[:25]:
+                                    if len(_row) >= 5:
+                                        _lines.append("  " + _row[0][:28].ljust(30) + _row[1].ljust(10) + _row[4][:10].ljust(12) + _row[2])
+                                result_parts.append("[AKTIF] Aktif Surecler (" + str(min(25, len(_rows))) + "/" + str(len(_rows)) + "):" + chr(10) + chr(10) + chr(10).join(_lines))
+                                _formatted = True
+                        except Exception:
+                            pass
+                        if not _formatted:
+                            _plines = _raw.split(chr(10))
+                            if _plines and _plines[0].startswith("USER"):
+                                _parsed = []
+                                for _line in _plines[1:26]:
+                                    _parts = _line.split(None, 10)
+                                    if len(_parts) >= 11:
+                                        _parsed.append("  " + _parts[10][:28].ljust(30) + _parts[1].ljust(10) + (_parts[5] + " KB").ljust(12) + _parts[7])
+                                if _parsed:
+                                    _total = len(_plines) - 1
+                                    _hdr = "  " + "Surec".ljust(30) + "PID".ljust(10) + "Bellek".ljust(12) + "Durum"
+                                    result_parts.append("[AKTIF] Aktif Surecler (" + str(min(25, _total)) + "/" + str(_total) + "):" + chr(10) + chr(10) + _hdr + chr(10) + "  " + "-" * 60 + chr(10) + chr(10).join(_parsed))
+                                    _formatted = True
+                        if not _formatted:
+                            result_parts.append("Surec ciktisi:" + chr(10) + _raw[:500])
                     else:
                         result_parts.append(str(r)[:300])
                 cevap = "\n".join(result_parts)

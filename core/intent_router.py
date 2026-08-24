@@ -123,8 +123,8 @@ INTENT_RULES = [
 
     # TERMINAL — Komut çalıştırma
     (Intent.TERMINAL, [
-        "komut çalıştır", "komut calistir", "terminal",
-        "cmd", "powershell", "shell",
+        "komut çalıştır", "komut calistir", "komutu", "komutla",
+        "terminal", "cmd", "powershell", "shell",
         "process", "task manager", "pid",
         "sistem bilgisi", "sistem bilgisi al",
         "log oku", "log dosyası",
@@ -139,6 +139,14 @@ INTENT_RULES = [
         "kullanici", "kullanıcı", "user",
         "dosya list", "klasor list", "klasör list",
         "calistir", "çalıştır", "baslat", "başlat",
+        # Process listing (Turkish)
+        "surec", "süreç", "surecleri", "süreçleri",
+        # Natural language system queries
+        "hangi surec", "calisan surec", "aktif surec",
+        "bilgisayarim", "bilgisayarinda",
+        "kac gb", "kadar", "kaçıncı",
+        "ne kadar", "durumu", "durumunu",
+        "ogr", "ogren",
     ]),
 
     # MEMORY — Hafıza/bellek
@@ -270,7 +278,7 @@ def classify_intent(text: str) -> Intent:
 
     # TERMINAL once check: cmd/terminal/powershell kelimesi varsa TERMINAL
     # Bu, CODE'daki 'calistir' keyword'unun_TERMINAL'i overrides etmesini engeller
-    _terminal_keywords = ['cmd', 'terminal', 'powershell', 'ps ', 'komut calistir', 'komut çalıştır']
+    _terminal_keywords = ['cmd', 'terminal', 'powershell', 'ps ', 'komut calistir', 'komut çalıştır', 'komutu', 'komutla', 'surec', 'süreç']
     if any(kw in text_lower for kw in _terminal_keywords):
         return Intent.TERMINAL
 

@@ -317,10 +317,14 @@ class ProcessManager:
     def list_processes(self) -> dict[str, Any]:
         """Çalışan process'leri listele."""
         try:
+            if os.name == "nt":
+                cmd = "tasklist /FO CSV /NH"
+            else:
+                cmd = "ps aux --sort=-pcpu"
             result = subprocess.run(
-                "tasklist /FO CSV /NH" if os.name == "nt" else "ps aux",
+                cmd,
                 capture_output=True, text=True, timeout=10,
-                encoding="utf-8", errors="replace",
+                shell=True, encoding="utf-8", errors="replace",
             )
             return {
                 "status": "OK",

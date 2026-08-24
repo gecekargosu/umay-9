@@ -55,20 +55,37 @@ INTENT_RULES = [
         "ayın kaçı", "ayin kaci", "yıl", "yil", "tarih ne",
     ]),
 
-    # CALCULATOR — Matematik işlemleri
+    # CALCULATOR — Matematik işlemleri (sadece kesin matematik kalıpları)
+    # NOT: Tek karakter operatörler (+,-,*,/,=) tek başına CALCULATOR tetiklemez
+    # Çünkü dosya yollarında (-, /), kodda (-, =), doğal dilde (-) bulunur
     (Intent.CALCULATOR, [
-        "+", "-", "*", "/", "=",
         "toplam", "topla", "çarp", "carp", "böl", "bol",
         "kaç eder", "kac eder", "sonuc", "sonuç",
+        "karesi", "karesini", "küpü", "küpünü",
+        "kaçtır", "kactir", "kaçtir",
+        "toplamı", "toplami", "farkı", "farki",
+        "çarpımı", "carpimi", "bölümü", "bolumu",
+        "yüzdesi", "yuzdesi",
+        "sqrt", "carpma", "çarpma", "bölme",
     ]),
 
-    # FILE — Dosya sistemi işlemleri
+    # FILE — Dosya sistemi işlemleri (genişletilmiş)
     (Intent.FILE, [
+        # Doğal dil dosya istekleri
+        "dosyayı oku", "dosyayi oku", "dosyanın içeriği", "dosyanin icerigi",
+        "dosyayı aç", "dosyayi ac", "dosyayı göster", "dosyayi goster",
+        "dosyayı incele", "dosyayi incele", "dosyayı analiz et",
+        "dosyaya yaz", "dosyaya ekle", "dosyayı değiştir", "dosyayi degistir",
+        "dosyaya bunu yaz", "dosyaya şunu yaz", "dosyaya bunu ekle", "dosyaya şunu ekle",
+        "dosyaya bunu", "dosyaya şunu", "dosyaya suyu",
+        "dosyadaki", "dosyanin", "dosyası", "dosyasi",
+        "bu dosyayı", "bu dosyaya", "bu dosyada", "bu dosyanın",
+        "şu dosyayı", "su dosyayi", "şu dosyaya", "su dosyaya",
         "klasörü listele", "klasoru listele", "klasörleri listele",
+        "klasorunu listele", "klasorlerini listele",
         "dosyaları listele", "dosyalari listele",
         "klasördeki", "klasordaki", "klasörde ne var",
-        "dosyayı oku", "dosyayi oku", "dosyanın içeriği", "dosyanin icerigi",
-        "dosyayı aç", "dosyayi ac", "klasörü aç", "klasoru ac",
+        "klasorunu", "klasorunde", "klasordeki",
         "dosya ara", "dosyayi ara", "bul dosya", "dosyayı bul",
         "hangi klasörde", "hangi klasorde", "nerede bu dosya",
         "masaüstü", "masaustu", "masaüstündeki", "masaustundeki",
@@ -79,6 +96,16 @@ INTENT_RULES = [
         "dosyaları göster", "dosyalari goster",
         "klasör yapısını", "klapisini", "klasor yapisini",
         "bu klasörde", "bu klasorde", "şu klasörde", "su klasorde",
+        # Dosya uzantısı pattern'leri (regex ile kontrol edilecek)
+        ".py dosyası", ".txt dosyası", ".json dosyası",
+        "dosyasının", "dosyasını", "dosyası içinde",
+        # Doğal dil dosya içeriği soruları
+        "dosyada ne var", "dosyada ne yazıyor", "dosyada ne yaziyor",
+        "dosyanın içinde ne var", "dosyanin icinde ne var",
+        "dosyanın içeriği ne", "dosyanin icerigi ne",
+        # Geniş dosya okuma (yeterince spesifik olmayan kelimeler Regex ile kontrol)
+        "ilk", "son", "satır", "satiri", "icerik",
+        "göster", "goster", "oku", "incele",
     ]),
 
     # DOCUMENT — PDF/Word/Excel
@@ -111,11 +138,12 @@ INTENT_RULES = [
         "web sitesi", "web sitesi aç", "siteyi aç",
     ]),
 
-    # CODE — Kod yazma/düzenleme
+    # CODE — Kod yazma/düzenleme (genişletilmiş)
     (Intent.CODE, [
         "kod yaz", "kod oluştur", "kod olustur",
         "dosyayı yaz", "dosyayi yaz", "oluştur", "olustur",
-        "düzelt", "duzelt", "hata düzelt",
+        "düzelt", "duzelt", "hata düzelt", "hata bul", "hatayi bul", "hatayı bul",
+        "bug bul", "bugfix", "hatayı düzelt", "hatayi duzelt",
         "test yaz", "test olustur", "pytest",
         "build", "compile", "çalıştır", "calistir",
         "git diff", "git status", "commit",
@@ -212,12 +240,40 @@ def classify_intent(text: str) -> Intent:
 
     text_lower = text.lower().strip()
 
-    # ── CALCULATOR DETECTION (GENİŞLETİLMİŞ) ──
+    # ── ÖNCE DOSYA/KOD/TERMINAL KONTROL ET (Calculator'dan ÖNCE) ──
     import re as _re
     
-    # 1. Matematik operatörleri varsa → CALCULATOR
+    # Dosya yolu pattern'i: \ (Windows path) veya / ile kelime kelimeden oluşan path'ler
+    # NOT: Boşluklu '/' ("100 / 5") dosya yolu DEĞİL, bölme işlemidir
+    has_file_path = bool(_re.search(r'\\|[a-zA-Z0-9_]/[a-zA-Z0-9_.]|[.]\w{1,5}\b', text_lower))
+    # Ek olarak: Douşen uzantıya ekli Türkçe ekler (.pydeki, .txtden, .json ile vb.)
+    has_file_ext_suffix = bool(_re.search(r'\.(py|txt|json|js|ts|html|css|md|yml|yaml|toml|cfg|ini|log|csv|xlsx|docx|pdf)\w*\s', text_lower))
+    # Kod kalıpları: def, class, import, function vb.
+    has_code_pattern = bool(_re.search(r'\b(def|class|import|from|return|if|for|while|try|except|with|as|lambda|yield|async|await)\b', text_lower))
+    # Dosya uzantıları
+    has_file_ext = bool(_re.search(r'\.(py|txt|json|js|ts|html|css|md|yml|yaml|toml|cfg|ini|log|csv|xlsx|docx|pdf)\b', text_lower))
+    # "ilk X satır", "son X satır" gibi dosya okuma kalıpları
+    has_line_pattern = bool(_re.search(r'\b(ilk|son|tüm|tum|ilk\d+|son\d+)\s*\d*\s*(satır|satiri|line|row)\b', text_lower))
+    
+    # Eğer dosya/kod kalıbı varsa Calculator'a gitme
+    if has_file_path or has_code_pattern or has_file_ext or has_line_pattern or has_file_ext_suffix:
+        # Dosya/kod kalıbı varsa Calculator tetikleme
+        _skip_calculator = True
+    else:
+        _skip_calculator = False
+    
+    # 1. Matematik operatörleri (SADECE gerçek matematik bağlamında)
     has_numbers = bool(_re.search(r'\d', text_lower))
-    has_math_ops = any(op in text_lower for op in ['+', '-', '*', '/', '=', '^', '**', '×', '÷'])
+    # Tek karakter operatörler tek başına yeterli değil — sayı komşuluğunda olmalı
+    # "10 + 20" → CALCULATOR
+    # "core/engine.py" → CALCULATOR DEĞİL (/ dosya yolu)
+    # "def add(a,b)" → CALCULATOR DEĞİL (- kod)
+    has_math_ops = bool(_re.search(r'\d\s*[+\-*/=^]\s*\d', text_lower))  # Sayı operatör sayı
+    has_standalone_ops = any(op in text_lower for op in ['+', '*', '=', '^', '**', '×', '÷'])
+    # '-' ve '/' tek başına yeterli değil (dosya yolları, kod)
+    # Ama '+', '*', '=', '^' sayı komşuluğundaysa CALCULATOR
+    if has_standalone_ops and has_numbers and not _skip_calculator:
+        has_math_ops = True
     # 'x' harfi sadece sayilar arasindaysa carpma isareti sayilir: "125 x 48"
     if not has_math_ops:
         has_math_ops = bool(_re.search(r'\d\s*x\s*\d', text_lower))
@@ -280,7 +336,7 @@ def classify_intent(text: str) -> Intent:
     # Calculator karar mantığı
     is_calc = (has_numbers and has_math_ops) or has_math_words or has_turkish_math_pattern or has_power_pattern or has_percentage_pattern
     
-    if is_calc:
+    if is_calc and not _skip_calculator:
         # Negation varsa calculator'a gitme
         if has_negation_around_math:
             return Intent.CHAT
@@ -291,6 +347,7 @@ def classify_intent(text: str) -> Intent:
         if not has_numbers and any(w in text_lower for w in ['hesapla', 'hesaplama']):
             return Intent.CHAT
         return Intent.CALCULATOR
+    # Dosya/kod kalıpları varsa Calculator'ı atla, alt intent'lere geç
 
     # TERMINAL once check: cmd/terminal/powershell kelimesi varsa TERMINAL
     # Bu, CODE'daki 'calistir' keyword'unun_TERMINAL'i overrides etmesini engeller
@@ -303,6 +360,20 @@ def classify_intent(text: str) -> Intent:
         for keyword in keywords:
             if keyword in text_lower:
                 return intent
+
+    # ── REGEX FALLBACK: Kısa pattern'ler substring ile eşleşmeyebilir ──
+    # Dosya uzantısı + "icinde/icerigi/ne var" pattern'i → FILE
+    if has_file_ext and any(w in text_lower for w in ['icinde', 'icerigi', 'iceride', 'icerisinde', 'ne var', 'ne yaziyor']):
+        return Intent.FILE
+    # Dosya yolu veya uzantı + "bul/listele/goster/oku" → FILE
+    if (has_file_path or has_file_ext) and any(w in text_lower for w in ['bul', 'listele', 'goster', 'göster', 'oku', 'incele', 'ac']):
+        return Intent.FILE
+    # Kod kalıpları (def/class/import) + "bul/duzelt/acikla" → CODE
+    if has_code_pattern and any(w in text_lower for w in ['bul', 'duzelt', 'düzelt', 'acikla', 'açıkla']):
+        return Intent.CODE
+    # Dosya uzantısı alone (e.g. "requirements.txt" veya "engine.pydeki") → FILE
+    if has_file_ext_suffix:
+        return Intent.FILE
 
     # Default: CHAT
     return Intent.CHAT

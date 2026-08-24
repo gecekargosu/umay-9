@@ -117,26 +117,55 @@ def read_file(path: str, start_line: int = 1, max_lines: int = 400) -> dict[str,
 
 
 def search_files(pattern: str, path: str = ".", max_results: int = 100) -> dict[str, Any]:
+    """Dosya adı veya içerik pattern'i ile ara.
+    
+    Glob pattern'leri (*.py, main.*) otomatik olarak regex'e çevrilir.
+    Regex pattern'leri doğrudan kullanılır.
+    """
     target = _safe_path(path)
-    regex = re.compile(pattern, re.IGNORECASE)
     max_results = max(1, min(int(max_results), MAX_SEARCH))
-    matches = []
-    files = target.rglob("*") if target.is_dir() else [target]
-    for file in files:
-        if not file.is_file() or _skip(file):
-            continue
+    
+    # Glob pattern kontrolü: * veya ? içeren pattern'leri glob olarak değerlendir
+    is_glob = bool(re.search(r'[*?\[\]]', pattern))
+    if is_glob:
+        # Glob pattern → dosya adında eşleşme ara (içerik araması değil)
+        matches = []
+        files = target.rglob("*") if target.is_dir() else [target]
+        for file in files:
+            if not file.is_file() or _skip(file):
+                continue
+            if file.match(pattern):
+                matches.append({
+                    "path": str(file.relative_to(ACTIVE_WORKSPACE)),
+                    "line": 0, "text": f"[dosya adı eşleşmesi: {file.name}]",
+                })
+                if len(matches) >= max_results:
+                    return {"pattern": pattern, "matches": matches, "type": "glob"}
+        return {"pattern": pattern, "matches": matches, "type": "glob"}
+    else:
+        # Regex/content pattern → dosya içeriklerinde ara
         try:
-            for lineno, line in enumerate(file.read_text(encoding="utf-8", errors="ignore").splitlines(), 1):
-                if regex.search(line):
-                    matches.append({
-                        "path": str(file.relative_to(ACTIVE_WORKSPACE)),
-                        "line": lineno, "text": line[:500],
-                    })
-                    if len(matches) >= max_results:
-                        return {"pattern": pattern, "matches": matches}
-        except (OSError, UnicodeError):
-            continue
-    return {"pattern": pattern, "matches": matches}
+            regex = re.compile(pattern, re.IGNORECASE)
+        except re.error:
+            # Geçersiz regex → literal arama
+            regex = re.compile(re.escape(pattern), re.IGNORECASE)
+        matches = []
+        files = target.rglob("*") if target.is_dir() else [target]
+        for file in files:
+            if not file.is_file() or _skip(file):
+                continue
+            try:
+                for lineno, line in enumerate(file.read_text(encoding="utf-8", errors="ignore").splitlines(), 1):
+                    if regex.search(line):
+                        matches.append({
+                            "path": str(file.relative_to(ACTIVE_WORKSPACE)),
+                            "line": lineno, "text": line[:500],
+                        })
+                        if len(matches) >= max_results:
+                            return {"pattern": pattern, "matches": matches, "type": "content"}
+            except (OSError, UnicodeError):
+                continue
+        return {"pattern": pattern, "matches": matches, "type": "content"}
 
 
 def write_file(path: str, content: str) -> dict[str, Any]:

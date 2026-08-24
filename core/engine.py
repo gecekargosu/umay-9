@@ -103,12 +103,32 @@ def _model_matches(candidate: str, installed: str) -> bool:
     return candidate == installed or candidate.split(":", 1)[0] == installed.split(":", 1)[0]
 
 
+# Intent value → MODEL_PREFERENCES key mapping
+_INTENT_TO_TASK = {
+    "code": "coding",
+    "file": "chat",
+    "web": "chat",
+    "computer": "agent",
+    "terminal": "agent",
+    "knowledge": "chat",
+    "time": "chat",
+    "calculator": "chat",
+    "memory": "chat",
+    "complex": "reasoning",
+    "document": "analysis",
+    "vision": "vision",
+}
+
+
 def resolve_model(task: str = "chat", requested: str | None = None) -> str | None:
     """Resolve best available model for task.
     
     Cloud-first for coding/reasoning/analysis, local for chat/simple tasks.
     Falls back to local if cloud unavailable.
     """
+    # Map intent values to MODEL_PREFERENCES keys
+    task = _INTENT_TO_TASK.get(task, task)
+
     available = installed_models()
     if not available:
         return None

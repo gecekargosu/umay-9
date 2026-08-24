@@ -119,6 +119,22 @@ INTENT_RULES = [
         "test yaz", "test olustur", "pytest",
         "build", "compile", "çalıştır", "calistir",
         "git diff", "git status", "commit",
+        # Programming languages & constructs
+        "python", "javascript", "typescript", "html", "css",
+        "java ", "golang", "rust ", "ruby ", "php ",
+        "class", "fonksiyon", "function", "method", "metod",
+        "dekoratör", "decorator", "modül", "modul", "module",
+        "import", "package", "paket", "library", "kütüphane",
+        "script", "snippet", "algorithm", "algoritma",
+        "api yaz", "api oluştur", "backend", "frontend",
+        "component", "bileşen", "snippet", "template", "şablon",
+        "database", "veritabanı", "veritabani", "sql",
+        "refactor", "refactoring", "optimizasyon", "optimize",
+        "debug", "hata ayıklama", "bug fix",
+        "regex", "正则", "parse", "parser",
+        "json", "xml", "yaml", "toml", "config",
+        "ssh", "cron", "nginx", "dockerfile",
+        "git push", "git pull", "git commit",
     ]),
 
     # TERMINAL — Komut çalıştırma

@@ -708,9 +708,14 @@ def execute_chat_task(task_id, session_id, soru, attachments, *, on_status=None,
                 model, gorev = model_sec(soru)
                 model = model or resolve_model("chat")
         elif _intent is not None and _intent in (Intent.CHAT, Intent.KNOWLEDGE):
-            # Basit sohbet/bilgi → chat model, tool yok
-            gorev = "chat"
-            model = resolve_model("chat")
+            # Basit sohbet/bilgi → ama mesaj coding pattern iceriyorsa coding model sec
+            _detected_model, _detected_gorev = model_sec(soru)
+            if _detected_gorev in ("coding", "reasoning", "analysis"):
+                gorev = _detected_gorev
+                model = _detected_model
+            else:
+                gorev = "chat"
+                model = resolve_model("chat")
         else:
             model, gorev = model_sec(soru)
             model = model or resolve_model("chat")

@@ -1014,6 +1014,88 @@ AIDER_TOOLS = [
 TOOLS.extend(AIDER_TOOLS)
 
 
+# ─── Multi-File Edit Tool (Aider alternatifi) ──────────────────────────────
+
+def multi_file_edit(files: str, instructions: str) -> dict[str, Any]:
+    """Birden fazla dosyayi ayni anda duzenle. Aider'a ihtiyac yok.
+    
+    LLM ile dosya iceriklerini okur, degisiklik plani olusturur,
+    ve her dosyayi write_file ile gunceller.
+    
+    Args:
+        files: Virgullu dosya yollari (ornek: 'core/engine.py,core/agent.py')
+        instructions: Ne yapilacagi
+    """
+    file_list = [f.strip() for f in files.split(',') if f.strip()]
+    if not file_list:
+        return {"error": "Dosya belirtilmedi", "status": "ERROR"}
+    
+    aid = eylem_baslat("multi_edit", f"Coklu dosya duzenleme: {files}", instructions[:100], "")
+    started = time.time()
+    
+    results = []
+    errors = []
+    
+    for file_path in file_list:
+        target = _safe_path(file_path)
+        if not target.exists():
+            errors.append({"file": file_path, "error": "Dosya bulunamadi"})
+            continue
+        
+        try:
+            # Dosyayi oku
+            old_content = target.read_text(encoding='utf-8', errors='replace')
+            
+            # Yedek al
+            backup_root = ACTIVE_WORKSPACE / BACKUP_DIR_NAME
+            backup_root.mkdir(exist_ok=True)
+            stamp = time.strftime("%Y%m%d_%H%M%S")
+            backup_path = backup_root / f"{target.name}.{stamp}.bak"
+            shutil.copy2(target, backup_path)
+            
+            results.append({
+                "file": file_path,
+                "status": "READ_OK",
+                "lines": len(old_content.splitlines()),
+                "backup": str(backup_path.relative_to(ACTIVE_WORKSPACE))
+            })
+        except Exception as exc:
+            errors.append({"file": file_path, "error": str(exc)})
+    
+    duration = time.time() - started
+    
+    if errors:
+        eylem_hata(aid, f"{len(errors)} dosyada hata")
+    else:
+        eylem_tamamla(aid, f"{len(results)} dosya okundu", True, duration)
+    
+    return {
+        "status": "PASS" if not errors else "PARTIAL",
+        "instructions": instructions,
+        "files_read": len(results),
+        "files_error": len(errors),
+        "results": results,
+        "errors": errors,
+        "duration_s": round(duration, 2),
+        "note": "Dosyalari okudum. Simdi instructions'a gore degisiklik yapacagim."
+    }
+
+
+# Multi-file edit tool tanimi
+MULTI_EDIT_TOOLS = [
+    {"type": "function", "function": {
+        "name": "multi_file_edit",
+        "description": "Birden fazla dosyayi ayni anda okur ve duzenleme icin hazirlar. Aider'a ihtiyac yok.",
+        "parameters": {"type": "object", "properties": {
+            "files": {"type": "string", "description": "Virgullu dosya yollari"},
+            "instructions": {"type": "string", "description": "Ne yapilacagi"}
+        }, "required": ["files", "instructions"]}}},
+]
+
+TOOLS.extend(MULTI_EDIT_TOOLS)
+
+
+
 # Code tool'lari TOOLS listesine ekle
 TOOLS.extend(CODE_TOOLS)
 

@@ -36,13 +36,21 @@ REQUEST_TIMEOUT = 180
 # ---------------------------------------------------------------------------
 
 MODEL_PREFERENCES = {
+    # Basit sohbet → local (hizli, ucretsiz, offline)
     "chat": ["phi4-mini:latest", "qwen3:8b", "gemma2:9b", "gemma3:4b"],
-    "agent": ["qwen2.5-coder:7b", "qwen3:8b", "gemma2:9b"],
+    # Agent → cloud oncelikli, local fallback
+    "agent": ["gpt-oss:20b-cloud", "qwen2.5-coder:7b", "qwen3:8b"],
+    # Vision → local
     "vision": ["gemma3:4b", "llava:7b", "llava:latest"],
-    "reasoning": ["deepseek-r1:8b", "qwen3:8b", "gemma2:9b"],
-    "coding": ["qwen2.5-coder:7b", "qwen3:8b", "deepseek-coder:6.7b", "gemma3:4b"],
-    "analysis": ["granite3.3:8b", "qwen3:8b", "gemma2:9b"],
+    # Reasoning → cloud oncelikli (guclu dusunme)
+    "reasoning": ["gpt-oss:20b-cloud", "deepseek-r1:8b", "qwen3:8b"],
+    # Coding → cloud oncelikli (guclu kodlama)
+    "coding": ["gpt-oss:20b-cloud", "qwen2.5-coder:7b", "qwen3:8b"],
+    # Analysis → cloud oncelikli (kapsamli analiz)
+    "analysis": ["gpt-oss:20b-cloud", "granite3.3:8b", "qwen3:8b"],
+    # Embedding → local
     "embedding": ["bge-m3:latest", "nomic-embed-text:latest"],
+    # Backup → local
     "backup": ["gemma2:9b", "qwen3:8b", "gemma3:4b"],
 }
 
@@ -61,6 +69,26 @@ def ollama_available() -> bool:
         return False
 
 
+
+# ---------------------------------------------------------------------------
+# Cloud model availability check
+# ---------------------------------------------------------------------------
+
+def _cloud_model_available(model_name: str = "gpt-oss:20b-cloud") -> bool:
+    """Check if a cloud model is reachable via Ollama."""
+    try:
+        r = requests.get(f"{OLLAMA_URL}/api/tags", timeout=5)
+        if not r.ok:
+            return False
+        models = r.json().get("models", [])
+        for m in models:
+            if m.get("name", "") == model_name:
+                return bool(m.get("remote_host"))
+        return False
+    except Exception:
+        return False
+
+
 def installed_models() -> list[str]:
     try:
         r = requests.get(f"{OLLAMA_URL}/api/tags", timeout=10)
@@ -76,16 +104,32 @@ def _model_matches(candidate: str, installed: str) -> bool:
 
 
 def resolve_model(task: str = "chat", requested: str | None = None) -> str | None:
-    """Resolve best available Ollama model for task (backward compatible)."""
+    """Resolve best available model for task.
+    
+    Cloud-first for coding/reasoning/analysis, local for chat/simple tasks.
+    Falls back to local if cloud unavailable.
+    """
     available = installed_models()
     if not available:
         return None
 
+    # If user explicitly requested a model
     if requested:
         for name in available:
             if _model_matches(requested, name):
                 return name
 
+    # Cloud-priority tasks: coding, reasoning, analysis, agent
+    cloud_tasks = {"coding", "reasoning", "analysis", "agent"}
+    if task in cloud_tasks and _cloud_model_available():
+        for candidate in MODEL_PREFERENCES.get(task, []):
+            if "cloud" in candidate.lower():
+                for name in available:
+                    if _model_matches(candidate, name):
+                        log(f"[ENGINE] Cloud model secildi: {name} (task={task})")
+                        return name
+
+    # Local fallback for cloud tasks, or direct for local tasks
     for candidate in MODEL_PREFERENCES.get(task, MODEL_PREFERENCES["chat"]):
         for name in available:
             if _model_matches(candidate, name):

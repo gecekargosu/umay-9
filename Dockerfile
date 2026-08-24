@@ -68,16 +68,7 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
     CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:5001/api/health')" || exit 1
 
 # Generate build info at build time
-RUN python -c "
-import json, datetime
-info = {
-    'version': '9.0',
-    'python': '3.13',
-    'build_time': datetime.datetime.now(datetime.timezone.utc).isoformat(),
-}
-with open('build_info.json', 'w') as f:
-    json.dump(info, f, indent=2)
-"
+RUN python -c "import json,datetime;info={'version':'9.0','python':'3.13','build_time':datetime.datetime.now(datetime.timezone.utc).isoformat()};open('build_info.json','w').write(json.dumps(info,indent=2))"
 
 # Default command — Flask UI (non-interactive)
 CMD ["python", "-m", "ui.panel_server"]

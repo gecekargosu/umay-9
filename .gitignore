@@ -25,6 +25,7 @@ __pycache__/
 dist/
 build/
 temp/
+*.backup
 
 # ─── IDE / Editor ────────────────────────────────────────────────────────────
 .vscode/
@@ -45,6 +46,7 @@ rag/chroma/
 
 # ─── Freebuff internal ───────────────────────────────────────────────────────
 .freebuff/
+.freebuffpreview-*
 
 # ─── Runtime / Logs (generated) ──────────────────────────────────────────────
 logs/*.log

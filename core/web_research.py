@@ -576,7 +576,7 @@ KURALLAR:
         messages = [
             {"role": "system", "content": self.COMPARISON_SYSTEM},
             {"role": "user", "content": (
-                f"Aşağıdaki web kaynaklarını karşılaştır:\n\n"
+                "Aşağıdaki web kaynaklarını karşılaştır:\n\n"
                 + "\n".join(source_texts)
                 + "\n\nKarşılaştırma ve analiz yap."
             )},
@@ -861,7 +861,7 @@ def research_topic(
 
         # ── 2. ARAMA ─────────────────────────────────────────────────────
         task.status = ResearchStatus.SEARCHING
-        log(f"[WEB_RESEARCH] Arama başlıyor...")
+        log("[WEB_RESEARCH] Arama başlıyor...")
 
         explorer = WebExplorer()
         all_sources: list[WebSource] = []
@@ -884,7 +884,7 @@ def research_topic(
 
         # ── 3. KAYNAK ANALİZİ ────────────────────────────────────────────
         task.status = ResearchStatus.ANALYZING
-        log(f"[WEB_RESEARCH] Kaynak analizi başlıyor...")
+        log("[WEB_RESEARCH] Kaynak analizi başlıyor...")
 
         # Her kaynak için güvenilirlik analizi
         for src in task.sources:
@@ -904,7 +904,7 @@ def research_topic(
 
         # ── 4. KARŞILAŞTIRMA ─────────────────────────────────────────────
         task.status = ResearchStatus.COMPARING
-        log(f"[WEB_RESEARCH] Karşılaştırma başlıyor...")
+        log("[WEB_RESEARCH] Karşılaştırma başlıyor...")
 
         comparator = MultiSourceComparator(model=model)
         comparison = comparator.compare_sources(task.sources)
@@ -913,7 +913,7 @@ def research_topic(
 
         # ── 5. RAPOR ─────────────────────────────────────────────────────
         task.status = ResearchStatus.REPORTING
-        log(f"[WEB_RESEARCH] Rapor oluşturuluyor...")
+        log("[WEB_RESEARCH] Rapor oluşturuluyor...")
 
         reporter = ResearchReportGenerator(model=model)
         report = reporter.generate_report(task, comparison)

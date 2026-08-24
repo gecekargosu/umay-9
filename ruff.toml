@@ -1,0 +1,38 @@
+# UMAY 9 — Ruff Configuration
+# Conservative: focus on real bugs, not style noise
+
+target-version = "py313"
+line-length = 120
+
+[lint]
+select = [
+    "F",     # Pyflakes (undefined names, unused imports)
+    "E",     # pycodestyle errors
+    "W",     # pycodestyle warnings
+    "I",     # isort
+    "B",     # flake8-bugbear (common bugs)
+    "UP",    # pyupgrade
+]
+
+ignore = [
+    "E501",   # line too long
+    "W191",   # tabs
+    "E111",   # indentation
+    "E117",   # over-indented
+    "E402",   # module level import not at top
+    "F401",   # unused import
+    "F811",   # redefined unused
+]
+
+[lint.per-file-ignores]
+"tests/*" = ["F"]
+"__init__.py" = ["F401"]
+"core/__init__.py" = ["F401"]
+"agents/__init__.py" = ["F401"]
+"scripts/*" = ["F", "E"]  # helper scripts
+"backup/*" = ["F", "E"]  # old versions
+"uploads/test/*" = ["F"]  # test fixtures
+
+[format]
+quote-style = "double"
+indent-style = "space"

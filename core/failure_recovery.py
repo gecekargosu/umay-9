@@ -188,7 +188,7 @@ def with_recovery(
 
             # Check if this is a permanent error — don't retry
             if _is_permanent(error_msg):
-                log(f"[RECOVERY] Permanent error detected, not retrying")
+                log("[RECOVERY] Permanent error detected, not retrying")
                 return RecoveryResult(
                     success=False,
                     attempts=attempt + 1,
@@ -199,7 +199,7 @@ def with_recovery(
 
             # Check if context overflow — try compression
             if _is_context_overflow(error_msg) and not compressed:
-                log(f"[RECOVERY] Context overflow detected, attempting compression")
+                log("[RECOVERY] Context overflow detected, attempting compression")
                 from core.context_compression import compress_context
 
                 compression = compress_context(current_messages, limit_tokens=limit_tokens)
@@ -211,7 +211,7 @@ def with_recovery(
                     # Don't wait on compression — retry immediately
                     continue
                 else:
-                    log(f"[RECOVERY] Compression not possible or not needed")
+                    log("[RECOVERY] Compression not possible or not needed")
 
             # For transient errors, wait before retry
             if attempt < max_retries - 1:

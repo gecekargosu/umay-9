@@ -730,14 +730,14 @@ if __name__ == "__main__":
         print(f"  Dil: {result.get('language')}")
 
     # Test 2: Dil tespiti
-    print(f"\nTest 2 - Dil tespiti:")
+    print("\nTest 2 - Dil tespiti:")
     print(f"  .py → {detect_language('test.py')}")
     print(f"  .js → {detect_language('test.js')}")
     print(f"  .tsx → {detect_language('test.tsx')}")
 
     # Test 3: Proje analizi
     result = analyze_project(str(Path(__file__).parent.parent))
-    print(f"\nTest 3 - Proje analizi:")
+    print("\nTest 3 - Proje analizi:")
     print(f"  Tip: {result.get('project_type')}")
     print(f"  Dosya sayısı: {result.get('total_files')}")
     print(f"  Diller: {result.get('languages')}")
